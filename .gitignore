@@ -1,5 +1,17 @@
-__pycache__/*
+# VSCode
 .vscode/*
-.DS_Store
+
+# Python
+__pycache__/
+.ipynb_checkpoints/
 *.pyc
 run_aml.py
+
+# macOS-specific files
+.DS_Store
+
+# Emacs
+*~
+
+# wandb
+wandb/
