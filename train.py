@@ -1,4 +1,7 @@
 # coding=utf-8
+
+import wandb
+
 import os
 import sys
 import pprint
@@ -204,4 +207,6 @@ def main():
     torch.distributed.destroy_process_group()
 
 if __name__ == '__main__':
+    wandb.init(project="videosync_scl", sync_tensorboard=True)
     main()
+    wandb.finish()

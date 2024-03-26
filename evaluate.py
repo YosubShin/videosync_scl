@@ -1,6 +1,8 @@
 # coding=utf-8
 """Evaluate embeddings on downstream tasks."""
 
+import wandb
+
 import os
 import math
 import torch
@@ -182,4 +184,6 @@ def evaluate():
                         iterator_tasks, embedding_tasks, start_epoch, summary_writer)
 
 if __name__ == '__main__':
+    wandb.init(project="videosync_scl", sync_tensorboard=True)
     evaluate()
+    wandb.finish()
