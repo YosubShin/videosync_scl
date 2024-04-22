@@ -109,7 +109,7 @@ def evaluate_once(cfg, model, train_loader, val_loader, train_emb_loader, val_em
                 metrics[task_name][dataset_name] = task.evaluate(
                     dataset, cur_epoch, summary_writer)
 
-            if dataset_name == "pouring" or dataset_name == "baseball_pitch":
+            if dataset_name == "pouring" or dataset_name == "baseball_pitch" or dataset_name == "ntu":
                 print("generating visualization for video alignment")
                 time_stride = 10
                 K = 5
