@@ -55,12 +55,12 @@ def all_reduce(tensors, average=True):
 
 
 def init_process_group(
-    local_rank,
-    local_world_size,
-    shard_id,
-    num_shards,
-    init_method,
-    dist_backend="nccl",):
+        local_rank,
+        local_world_size,
+        shard_id,
+        num_shards,
+        init_method,
+        dist_backend="nccl",):
     """
     Initializes the default process group.
     Args:

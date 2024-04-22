@@ -1,19 +1,20 @@
 # coding=utf-8
 """List all available tasks."""
 
-#from evaluation.algo_loss import AlgoLoss
+# from evaluation.algo_loss import AlgoLoss
 from evaluation.classification import Classification
 from evaluation.event_completion import EventCompletion
 from evaluation.kendalls_tau import KendallsTau
 from evaluation.retrieval import Retrieval
 
 TASK_NAME_TO_TASK_CLASS = {
-    #'algo_loss': AlgoLoss,
+    # 'algo_loss': AlgoLoss,
     'kendalls_tau': KendallsTau,
     'retrieval': Retrieval,
     'classification': Classification,
     'event_completion': EventCompletion,
 }
+
 
 def get_tasks(cfg):
     """Returns evaluation tasks."""

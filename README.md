@@ -20,11 +20,9 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-
-
 ## Preparing Data
 
-Create a directory to store datasets: 
+Create a directory to store datasets:
 
 ```bash
 mkdir /home/username/datasets
@@ -32,11 +30,11 @@ mkdir /home/username/datasets
 
 #### Download pre-processed datasets
 
-- Download the Pouring dataset at [pouring](https://drive.google.com/drive/folders/1hvA4bDqPnxjiVM4c4mxm-UPOuO1lAVxW?usp=sharing) 
-- Download the PennAction dataset at [penn_action](https://drive.google.com/drive/folders/1hPbkKSSM5NoQKKzvAr2bHDp-pCHZpnVj?usp=sharing) 
-- Download the FineGym dataset at [finegym](https://drive.google.com/drive/folders/1XOIy_6qtTo5MEecaWsi8X59p9BqLzmag?usp=sharing) 
+- Download the Pouring dataset at [pouring](https://drive.google.com/drive/folders/1hvA4bDqPnxjiVM4c4mxm-UPOuO1lAVxW?usp=sharing)
+- Download the PennAction dataset at [penn_action](https://drive.google.com/drive/folders/1hPbkKSSM5NoQKKzvAr2bHDp-pCHZpnVj?usp=sharing)
+- Download the FineGym dataset at [finegym](https://drive.google.com/drive/folders/1XOIy_6qtTo5MEecaWsi8X59p9BqLzmag?usp=sharing)
 
-BaiduCloud: https://pan.baidu.com/s/1Vu9Qkiei-O10tcdCJAwaHA  password: 7rbo
+BaiduCloud: https://pan.baidu.com/s/1Vu9Qkiei-O10tcdCJAwaHA password: 7rbo
 
 (Due to my limited storage, the link for finegym on google drive is expired. Only BaiduCloud link is avaliable now.)
 
@@ -72,8 +70,6 @@ Our ResNet50 beckbone is initialized with the weights trained by BYOL.
 
 Download the pretrained weight at [pretrained_models](https://drive.google.com/drive/folders/1VwC4x5xj4Ho3bnh9wZZx--iYhIUguR-q?usp=sharing), and place it at `/home/username/datasets/pretrained_models`.
 
-
-
 ## Training
 
 Check `./configs` directory to see all config settings.
@@ -98,8 +94,6 @@ We use “automatic mixed precision training” by default, but it sometimes cau
 python -m torch.distributed.launch --nproc_per_node 1 train.py --workdir ~/datasets --cfg_file ./configs/scl_transformer_action_config.yml --logdir ~/tmp/scl_transformer_action_logs
 ```
 
-
-
 ##### Training on FineGym
 
 ```
@@ -116,16 +110,14 @@ Download K400 dataset from https://github.com/cvdfoundation/kinetics-dataset
 python -m torch.distributed.launch --nproc_per_node 1 train.py --workdir ~/datasets --cfg_file ./configs/scl_transformer_k400_pretrain_config.yml --logdir ~/tmp/scl_transformer_k400_pretrain_logs
 ```
 
-
-
 ### Checkpoints
 
-We provide the checkpoints trained by our CARL method at 
+We provide the checkpoints trained by our CARL method at
 
 - [scl_transformer_logs](https://drive.google.com/drive/folders/163NvBvfb0_HyciMzqFuPCugN1F3oci7k?usp=sharing) (for Pouring)
 - [scl_transformer_action_logs](https://drive.google.com/drive/folders/1RXD5Vl8hlsBPpiCaSIRlxEFUohPFCLUG?usp=sharing) (for PennAction)
 - [scl_transformer_finegym_logs](https://drive.google.com/drive/folders/1XCxwo9KTXJBG3LfxQwikguLYOI6v-SHw?usp=sharing) (for FineGym). In this checkpoint, we also provide the extracted frame-wise representations of videos in FineGym.
--  [scl_transformer_k400_pretrain_logs](https://drive.google.com/drive/folders/1EYrpweUetE9I1oaia2qkhq2B7gITpR77?usp=sharing) (the model pretrained on K400 by our CARL)
+- [scl_transformer_k400_pretrain_logs](https://drive.google.com/drive/folders/1EYrpweUetE9I1oaia2qkhq2B7gITpR77?usp=sharing) (the model pretrained on K400 by our CARL)
 
 Place these checkpoints at `/home/username/tmp` to evaluate them.
 
@@ -145,20 +137,16 @@ tensorboard --logdir=~/tmp/scl_transformer_logs
 
 The video file of video alignment have already generated at `/home/username/tmp/scl_transformer_logs`
 
-
-
 ## Citation
 
 ```
 @inproceedings{chen2022framewise,
-      title={Frame-wise Action Representations for Long Videos via Sequence Contrastive Learning}, 
+      title={Frame-wise Action Representations for Long Videos via Sequence Contrastive Learning},
       author={Minghao Chen and Fangyun Wei and Chong Li and Deng Cai},
       booktitle={CVPR},
       year={2022}
 }
 ```
-
-
 
 ## Acknowledgment
 
