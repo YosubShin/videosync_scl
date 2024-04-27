@@ -1,5 +1,5 @@
 import torch
-
+from datasets.ntu import Ntu
 
 def construct_dataloader(cfg, split, mode="auto"):
     assert split in ["train", "val", "test"]
@@ -27,6 +27,21 @@ def construct_dataloader(cfg, split, mode="auto"):
                                                        num_workers=cfg.DATA.NUM_WORKERS, pin_memory=True, sampler=train_sampler,
                                                        drop_last=True)
             train_eval_dataset = Finegym(
+                cfg, split, mode="eval", sample_all=True, dataset=train_dataset.dataset)
+            train_eval_sampler = torch.utils.data.distributed.DistributedSampler(
+                train_eval_dataset) if cfg.NUM_GPUS > 1 else None
+            train_eval_loader = [torch.utils.data.DataLoader(train_eval_dataset, batch_size=1, shuffle=False,
+                                                             num_workers=cfg.DATA.NUM_WORKERS, pin_memory=True, sampler=train_eval_sampler)]
+        elif cfg.DATASETS[0] == "ntu":
+            from datasets.finegym import Finegym
+            train_dataset = Ntu(cfg, split, mode="train")
+            train_sampler = torch.utils.data.distributed.DistributedSampler(
+                train_dataset) if cfg.NUM_GPUS > 1 else None
+            train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=cfg.TRAIN.BATCH_SIZE,
+                                                       shuffle=True if train_sampler is None else False,
+                                                       num_workers=cfg.DATA.NUM_WORKERS, pin_memory=True, sampler=train_sampler,
+                                                       drop_last=True)
+            train_eval_dataset = Ntu(
                 cfg, split, mode="eval", sample_all=True, dataset=train_dataset.dataset)
             train_eval_sampler = torch.utils.data.distributed.DistributedSampler(
                 train_eval_dataset) if cfg.NUM_GPUS > 1 else None
@@ -102,7 +117,6 @@ def construct_dataloader(cfg, split, mode="auto"):
             val_eval_loader = [torch.utils.data.DataLoader(val_eval_dataset, batch_size=1, shuffle=False,
                                                            num_workers=cfg.DATA.NUM_WORKERS, pin_memory=True, sampler=val_eval_sampler)]
         elif cfg.DATASETS[0] == "ntu":
-            from datasets.ntu import Ntu
             val_dataset = Ntu(cfg, split, mode)
             val_sampler = torch.utils.data.distributed.DistributedSampler(
                 val_dataset) if cfg.NUM_GPUS > 1 else None

@@ -39,9 +39,6 @@ EVAL:
   NUM_FRAMES: 80
   TASKS:
     - kendalls_tau
-    - retrieval
-    - classification
-    - event_completion
   VAL_INTERVAL: 2
 IMAGE_SIZE: 224
 LOGDIR: /tmp/scl_transformer_ntu_logs

@@ -1,14 +1,10 @@
 # coding=utf-8
 import os
 import json
-import math
-import shutil
-from sys import version
 import cv2
 from tqdm import tqdm
 import pickle
-import numpy as np
-import torch
+# import torch
 
 
 def main(split="train"):
@@ -68,43 +64,66 @@ def main(split="train"):
         'S001C001P001R002A007',
         'S001C002P001R002A007'
     ])
+    start_times = [
+        0,
+        1
+    ]
 
     dataset = []
+
+    print('ntu_process.py:74')
+    
     for i, event_id in tqdm(enumerate(event_ids), total=len(event_ids)):
+        print('event_id' + event_id)
+        
         output_file = os.path.join(output_dir, event_id) + ".mp4"
         video_id = event_id
 
         if not os.path.exists(output_file):
             video_path = os.path.join(video_dir, video_id)
             suffix = "_rgb.avi"
+
+            print('video_path' + video_path)
             if os.path.exists(video_path+suffix):
                 video_file = video_path+suffix
+            else:
+                continue
 
+            print('line 88')
+
+            start_time = start_times[i]
+            
             temp_output_file = os.path.join(output_dir, event_id) + "_temp.mp4"
-            cmd = f'ffmpeg -hide_banner -loglevel panic -y -i {video_file} -c:v copy -c:a copy {output_file}'
+            cmd = f'ffmpeg -hide_banner -loglevel panic -y -ss {start_time} -i {video_file} -c:v copy -c:a copy {output_file}'
             os.system(cmd)
+
+            print('line 94')
             cmd = f'ffmpeg -hide_banner -loglevel panic -y -i {output_file} -strict -2 -vf scale=640:360 {temp_output_file}'
             os.system(cmd)
             cmd = f'ffmpeg -hide_banner -loglevel panic -y -i {temp_output_file} -filter:v fps=25 {output_file}'
             os.system(cmd)
             os.remove(temp_output_file)
 
+        print('line105')
         video = cv2.VideoCapture(output_file)
         fps = int(video.get(cv2.CAP_PROP_FPS))
         width = int(video.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(video.get(cv2.CAP_PROP_FRAME_HEIGHT))
         num_frames = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
+        
         # print(video_file, "\n", output_file)
         print(event_id, num_frames, fps, width, height)
 
         data_dict = {"id": i, "name": event_id, "video_file": os.path.join("processed_videos", event_id+".mp4"),
                      "seq_len": num_frames}
         dataset.append(data_dict)
+        print('line 114')
     with open(save_file, 'wb') as f:
         pickle.dump(dataset, f)
     print(f"{len(dataset)} {split} samples of NTU dataset have been writen.")
 
 
 if __name__ == '__main__':
+    print('ntu_process.py')
     main(split="train")
     main(split="val")
