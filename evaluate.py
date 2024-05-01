@@ -128,7 +128,7 @@ def evaluate_once(cfg, model, train_loader, val_loader, train_emb_loader, val_em
                 key_frames_list = [0 for _ in range(K)]
 
                 print('dataset', dataset)
-                
+
                 for data_id, data in enumerate(val_emb_loader[i].dataset.dataset):
                     print("data['name']", data['name'])
                     if data['name'] == dataset['val_dataset']['names'][q_id]:
@@ -207,7 +207,7 @@ def evaluate():
 
 if __name__ == '__main__':
     print('line 199')
-    
+
     wandb.init(project="videosync_scl", sync_tensorboard=True)
     evaluate()
     wandb.finish()
