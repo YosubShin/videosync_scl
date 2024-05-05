@@ -85,12 +85,11 @@ class Ntu(torch.utils.data.Dataset):
             print(video_file)
         # T H W C -> T C H W, [0,1] tensor
         video = video.permute(0, 3, 1, 2).float() / 255.0
-        frame_label = 0 * torch.ones(seq_len)
+        frame_label = torch.full((seq_len, ), self.dataset[index]['label'], dtype=torch.int32)
 
-
-        print('name', name)
-        print('seq_len', seq_len)
-        print('self.sample_all', self.sample_all)
+        # print('name', name)
+        # print('seq_len', seq_len)
+        # print('self.sample_all', self.sample_all)
 
         if self.cfg.SSL and not self.sample_all:        
             names = [name, name]

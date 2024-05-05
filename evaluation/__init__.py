@@ -6,6 +6,7 @@ from evaluation.classification import Classification
 from evaluation.event_completion import EventCompletion
 from evaluation.kendalls_tau import KendallsTau
 from evaluation.retrieval import Retrieval
+from evaluation.sync_offset import SyncOffset
 
 TASK_NAME_TO_TASK_CLASS = {
     # 'algo_loss': AlgoLoss,
@@ -13,6 +14,7 @@ TASK_NAME_TO_TASK_CLASS = {
     'retrieval': Retrieval,
     'classification': Classification,
     'event_completion': EventCompletion,
+    'sync_offset': SyncOffset,
 }
 
 

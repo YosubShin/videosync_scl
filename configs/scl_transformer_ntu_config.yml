@@ -38,7 +38,7 @@ EVAL:
     - 15
   NUM_FRAMES: 80
   TASKS:
-    - kendalls_tau
+    - sync_offset
   VAL_INTERVAL: 2
 IMAGE_SIZE: 224
 LOGDIR: /tmp/scl_transformer_ntu_logs

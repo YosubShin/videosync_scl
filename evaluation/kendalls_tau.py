@@ -50,6 +50,7 @@ class KendallsTau(object):
         taus = np.zeros((num_seqs * (num_seqs - 1)))
         idx = 0
 
+        print('num_seqs', num_seqs)
         print(embs_list)
         
         for i in range(num_seqs):
@@ -59,9 +60,9 @@ class KendallsTau(object):
                     continue
                 candidate_feats = embs_list[j][::self.stride]
 
-                print('query_feats', query_feats)
-                print('candidate_feats', candidate_feats)
-                print('self.dist_type', self.dist_type)
+                # print('query_feats', query_feats)
+                # print('candidate_feats', candidate_feats)
+                # print('self.dist_type', self.dist_type)
                 
                 dists = cdist(query_feats, candidate_feats, self.dist_type)
                 nns = np.argmin(dists, axis=1)
