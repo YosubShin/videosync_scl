@@ -27,7 +27,7 @@ class Ntu(torch.utils.data.Dataset):
         else:
             self.mode = mode
         self.sample_all = sample_all
-        self.num_contexts = cfg.DATA.NUM_CONTEXTS        
+        self.num_contexts = cfg.DATA.NUM_CONTEXTS
         self.train_dataset = os.path.join(
             cfg.PATH_TO_DATASET, f"train.pkl")
         self.val_dataset = os.path.join(
@@ -55,7 +55,7 @@ class Ntu(torch.utils.data.Dataset):
                 else:
                     self.dataset.append(data)
             print(self.error_videos)
-    
+
             logger.info(
                 f"{len(self.dataset)} {self.split} samples of Finegym dataset have been read.")
             seq_lens = [int(data['seq_len']) for data in self.dataset]
@@ -85,16 +85,17 @@ class Ntu(torch.utils.data.Dataset):
             print(video_file)
         # T H W C -> T C H W, [0,1] tensor
         video = video.permute(0, 3, 1, 2).float() / 255.0
-        frame_label = torch.full((seq_len, ), self.dataset[index]['label'], dtype=torch.int32)
+        frame_label = torch.full(
+            (seq_len, ), self.dataset[index]['label'], dtype=torch.int32)
 
         # print('name', name)
         # print('seq_len', seq_len)
         # print('self.sample_all', self.sample_all)
 
-        if self.cfg.SSL and not self.sample_all:        
+        if self.cfg.SSL and not self.sample_all:
             names = [name, name]
             steps_0, chosen_step_0, video_mask0 = self.sample_frames(
-                seq_len, seq_len)        
+                seq_len, seq_len)
             view_0 = self.data_preprocess(video[steps_0.long()])
             label_0 = frame_label[chosen_step_0.long()]
             steps_1, chosen_step_1, video_mask1 = self.sample_frames(

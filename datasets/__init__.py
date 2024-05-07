@@ -1,6 +1,7 @@
 import torch
 from datasets.ntu import Ntu
 
+
 def construct_dataloader(cfg, split, mode="auto"):
     assert split in ["train", "val", "test"]
     if split == "train":

@@ -75,7 +75,7 @@ def main(split="train"):
                     labels[event_id] = data['category_id']
 
             # scene = file[1:4]
-            
+
             # performer = file[9:12]
             # replication = file[13:16]
             # action = file[17:20]

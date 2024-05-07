@@ -30,7 +30,7 @@ class KendallsTau(object):
         """Labeled evaluation."""
 
         print('dataset', dataset)
-        
+
         train_embs = dataset['train_dataset']['embs']
 
         self.get_kendalls_tau(
@@ -52,7 +52,7 @@ class KendallsTau(object):
 
         print('num_seqs', num_seqs)
         print(embs_list)
-        
+
         for i in range(num_seqs):
             query_feats = embs_list[i][::self.stride]
             for j in range(num_seqs):
@@ -63,7 +63,7 @@ class KendallsTau(object):
                 # print('query_feats', query_feats)
                 # print('candidate_feats', candidate_feats)
                 # print('self.dist_type', self.dist_type)
-                
+
                 dists = cdist(query_feats, candidate_feats, self.dist_type)
                 nns = np.argmin(dists, axis=1)
                 if visualize:

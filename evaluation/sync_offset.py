@@ -25,7 +25,7 @@ class SyncOffset(object):
 
     def evaluate(self, dataset, cur_epoch, summary_writer):
         """Labeled evaluation."""
-        
+
         train_embs = dataset['train_dataset']['embs']
         train_names = dataset['train_dataset']['names']
         train_labels = dataset['train_dataset']['labels']
@@ -53,7 +53,7 @@ class SyncOffset(object):
 
     #     print('num_seqs', num_seqs)
     #     print(embs_list)
-        
+
     #     for i in range(num_seqs):
     #         query_feats = embs_list[i][::self.stride]
     #         for j in range(num_seqs):
@@ -64,7 +64,7 @@ class SyncOffset(object):
     #             # print('query_feats', query_feats)
     #             # print('candidate_feats', candidate_feats)
     #             # print('self.dist_type', self.dist_type)
-                
+
     #             dists = cdist(query_feats, candidate_feats, self.dist_type)
     #             nns = np.argmin(dists, axis=1)
     #             if visualize:
@@ -100,7 +100,7 @@ class SyncOffset(object):
         num_pairs = int(num_seqs / 2)
         frame_errors = np.zeros(num_pairs)
         idx = 0
-        
+
         sync_offset = 0
         for i in range(num_seqs):
             query_feats = embs_list[i]
@@ -110,7 +110,7 @@ class SyncOffset(object):
             camera = name[5:8]
             if camera != '001':
                 continue
-            
+
             # Get the other angle's filename.
             candidate_name = f'{name[:5]}002{name[8:]}'
             candidate_i = name_to_idx[candidate_name]
@@ -118,10 +118,13 @@ class SyncOffset(object):
             candidate_label = labels[candidate_i][0]
 
             print('name', name, 'candidate_name', candidate_name)
-            print('query_feats.shape', query_feats.shape, 'candiate_feats.shape', candidate_feats.shape)
-            print('label', str(label), 'candidate_label', str(candidate_label), 'label - candidate_label', str(label - candidate_label))
+            print('query_feats.shape', query_feats.shape,
+                  'candiate_feats.shape', candidate_feats.shape)
+            print('label', str(label), 'candidate_label', str(
+                candidate_label), 'label - candidate_label', str(label - candidate_label))
 
-            sync_offset = decision_offset(torch.tensor(query_feats).cuda(), torch.tensor(candidate_feats).cuda(), label - candidate_label)
+            sync_offset = decision_offset(torch.tensor(query_feats).cuda(
+            ), torch.tensor(candidate_feats).cuda(), label - candidate_label)
             print('sync_offset', sync_offset)
 
             frame_errors[idx] = sync_offset
@@ -140,7 +143,8 @@ def get_similarity(view1, view2):
     norm1 = norm1.reshape(-1, 1)
     norm2 = torch.sum(torch.square(view2), dim=1)
     norm2 = norm2.reshape(1, -1)
-    similarity = norm1 + norm2 - 2.0 * torch.matmul(view1, view2.transpose(1, 0))
+    similarity = norm1 + norm2 - 2.0 * \
+        torch.matmul(view1, view2.transpose(1, 0))
     similarity = -1.0 * torch.max(similarity, torch.zeros(1).cuda())
 
     return similarity
@@ -151,7 +155,8 @@ def decision_offset(view1, view2, label):
 
     softmaxed_sim_12 = Fun.softmax(sim_12, dim=1)
 
-    ground = (torch.tensor([i * 1.0 for i in range(view1.size(0))]).cuda()).reshape(-1, 1)
+    ground = (torch.tensor(
+        [i * 1.0 for i in range(view1.size(0))]).cuda()).reshape(-1, 1)
 
     predict = softmaxed_sim_12.argmax(dim=1)
 
