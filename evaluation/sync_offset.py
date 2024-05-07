@@ -45,50 +45,6 @@ class SyncOffset(object):
             val_embs, val_names, val_labels, cur_epoch, summary_writer, '%s_val' % dataset['name'])
         return sync_offset
 
-    # def get_kendalls_tau(self, embs_list, cur_epoch, summary_writer, split, visualize=False):
-    #     """Get nearest neighbours in embedding space and calculate Kendall's Tau."""
-    #     num_seqs = len(embs_list)
-    #     taus = np.zeros((num_seqs * (num_seqs - 1)))
-    #     idx = 0
-
-    #     print('num_seqs', num_seqs)
-    #     print(embs_list)
-
-    #     for i in range(num_seqs):
-    #         query_feats = embs_list[i][::self.stride]
-    #         for j in range(num_seqs):
-    #             if i == j:
-    #                 continue
-    #             candidate_feats = embs_list[j][::self.stride]
-
-    #             # print('query_feats', query_feats)
-    #             # print('candidate_feats', candidate_feats)
-    #             # print('self.dist_type', self.dist_type)
-
-    #             dists = cdist(query_feats, candidate_feats, self.dist_type)
-    #             nns = np.argmin(dists, axis=1)
-    #             if visualize:
-    #                 if (i == 0 and j == 1) or (i < j and num_seqs == 14):
-    #                     sim_matrix = []
-    #                     for k in range(len(query_feats)):
-    #                         sim_matrix.append(
-    #                             softmax(-dists[k], t=self.temperature))
-    #                     sim_matrix = np.array(sim_matrix, dtype=np.float32)
-    #                     summary_writer.add_image(
-    #                         f'{split}/sim_matrix_{i}_{j}', sim_matrix.T, cur_epoch, dataformats='HW')
-    #             taus[idx] = kendalltau(np.arange(len(nns)), nns).correlation
-    #             idx += 1
-    #     # Remove NaNs.
-    #     taus = taus[~np.isnan(taus)]
-    #     tau = np.mean(taus)
-
-    #     logger.info('epoch[{}/{}] {} set alignment tau: {:.4f}'.format(
-    #         cur_epoch, self.cfg.TRAIN.MAX_EPOCHS, split, tau))
-
-    #     summary_writer.add_scalar(
-    #         'kendalls_tau/%s_align_tau' % split, tau, cur_epoch)
-    #     return tau
-
     def get_sync_offset(self, embs_list, names, labels, cur_epoch, summary_writer, split):
         num_seqs = len(embs_list)
 

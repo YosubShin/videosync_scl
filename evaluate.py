@@ -39,11 +39,6 @@ def get_embeddings_dataset(cfg, model, data_loader):
         for video, frame_label, seq_len, chosen_steps, video_masks, names in data_loader:
             assert video.size(0) == 1  # batch_size==1
 
-            # print('video.size(1)', video.size(1))
-            # print('frame_label.size(1)', frame_label.size(1))
-            # print('seq_len', seq_len)
-            # print('names', names)
-            # print('frame_label', frame_label)
             assert video.size(1) == frame_label.size(1) == int(seq_len.item())
             embs = []
             seq_len = seq_len.item()
@@ -60,16 +55,13 @@ def get_embeddings_dataset(cfg, model, data_loader):
                         torch.arange(-(num_contexts-1), 1).view(1, -1)
                 steps = torch.clamp(steps.view(-1), 0, seq_len - 1)
                 curr_data = video[:, steps]
-                # print(i, num_steps, seq_len, curr_data.shape)
                 if cfg.USE_AMP:
                     with torch.cuda.amp.autocast():
                         emb_feats = model(curr_data, num_steps)
                 else:
                     emb_feats = model(curr_data, num_steps)
                 embs.append(emb_feats[0].cpu())
-                # print('emb_feats[0].cpu()', emb_feats[0].cpu())
             valid = (frame_label[0] >= 0)
-            # print('valid', valid, 'frame_label[0]', frame_label[0])
             embs = torch.cat(embs, dim=0)
             embs_list.append(embs[valid].numpy())
             frame_labels_list.append(frame_label[0][valid].cpu().numpy())
@@ -129,10 +121,7 @@ def evaluate_once(cfg, model, train_loader, val_loader, train_emb_loader, val_em
 
                 key_frames_list = [0 for _ in range(K)]
 
-                # print('dataset', dataset)
-
                 for data_id, data in enumerate(val_emb_loader[i].dataset.dataset):
-                    # print("data['name']", data['name'])
                     if data['name'] == dataset['val_dataset']['names'][q_id]:
                         query_video = val_emb_loader[i].dataset[data_id][0].permute(
                             0, 2, 3, 1)

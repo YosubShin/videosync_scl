@@ -1,6 +1,5 @@
 # coding=utf-8
 import os
-import csv
 import math
 import cv2
 from tqdm import tqdm
@@ -8,7 +7,6 @@ import pickle
 import numpy as np
 import torch
 import torch.nn.functional as F
-import torch.distributed as dist
 from torchvision.io import read_video
 
 import utils.logging as logging
@@ -87,10 +85,6 @@ class Ntu(torch.utils.data.Dataset):
         video = video.permute(0, 3, 1, 2).float() / 255.0
         frame_label = torch.full(
             (seq_len, ), self.dataset[index]['label'], dtype=torch.int32)
-
-        # print('name', name)
-        # print('seq_len', seq_len)
-        # print('self.sample_all', self.sample_all)
 
         if self.cfg.SSL and not self.sample_all:
             names = [name, name]
