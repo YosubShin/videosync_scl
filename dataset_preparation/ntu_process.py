@@ -32,8 +32,8 @@ def main(split="train"):
             if camera != '001':
                 continue
 
-            # Sample 1/16 only.
-            if i % 16 != 0:
+            # Sample 1/8 only.
+            if i % 8 != 0:
                 continue
 
             # Sample file name:
