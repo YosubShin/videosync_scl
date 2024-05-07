@@ -57,7 +57,7 @@ class SyncOffset(object):
         frame_errors = np.zeros(num_pairs)
         idx = 0
 
-        sync_offset = 0
+        frame_error = 0
         for i in range(num_seqs):
             query_feats = embs_list[i]
             name = names[i]
@@ -79,17 +79,20 @@ class SyncOffset(object):
             print('label', str(label), 'candidate_label', str(
                 candidate_label), 'label - candidate_label', str(label - candidate_label))
 
-            sync_offset = decision_offset(torch.tensor(query_feats).cuda(
+            frame_error = decision_offset(torch.tensor(query_feats).cuda(
             ), torch.tensor(candidate_feats).cuda(), label - candidate_label)
-            print('sync_offset', sync_offset)
+            print('frame error', frame_error)
 
-            frame_errors[idx] = sync_offset
+            frame_errors[idx] = frame_error
             idx += 1
 
         avg_frame_error = np.mean(frame_errors)
+        std_dev = np.std(frame_errors)
 
         logger.info('epoch[{}/{}] {} set avg frame error: {:.4f}'.format(
             cur_epoch, self.cfg.TRAIN.MAX_EPOCHS, split, avg_frame_error))
+        logger.info('epoch[{}/{}] {} set std dev: {:.4f}'.format(
+            cur_epoch, self.cfg.TRAIN.MAX_EPOCHS, split, std_dev))
 
         return avg_frame_error
 
