@@ -18,7 +18,7 @@ def main(split="train"):
     video_dir = os.path.join(data_root, "raw_videos")
     ntu_syn_dir = os.path.join(data_root, "NTU-SYN/pose/test")
 
-    labels = {}
+    labels = [{}, {}]
     event_ids = set()
 
     video_pair_ids = set()
@@ -32,52 +32,53 @@ def main(split="train"):
             if camera != '001':
                 continue
 
-            # Sample 1/8 only.
-            if i % 8 != 0:
-                continue
-
             # Sample file name:
             # S001C002P001R002A007_rgb.avi.json
             # S: scene, C: camera, P: performer, R: replication, A: action
 
-            for camera_id in ['001', '002']:
-                file = f'{file[0:5]}{camera_id}{file[8:]}'
-                event_id = file.split("_rgb")[0]
-                event_ids.add(event_id)
+            event_id = file.split("_rgb")[0]
+            event_ids.add(event_id)
 
+            for i, camera_id in enumerate(['001', '002']):
+                file = f'{file[0:5]}{camera_id}{file[8:]}'
                 with open(os.path.join(root, file), 'r') as f:
                     data = json.load(f)
-                    labels[event_id] = data['category_id']
+                    labels[i][event_id] = data['category_id']
+            
+            
 
     dataset = []
 
     for i, event_id in tqdm(enumerate(event_ids), total=len(event_ids)):
-        output_file = os.path.join(output_dir, event_id) + ".mp4"
-        video_id = event_id
+        data_dict = {"id": i, "name": event_id }
+        for j, camera_id in enumerate(['001', '002']):
+            video_id = f'{event_id[:5]}{camera_id}{event_id[8:]}'
+            output_file = os.path.join(output_dir, video_id) + ".mp4"
+            if not os.path.exists(output_file):
+                video_path = os.path.join(video_dir, video_id)
+                suffix = "_rgb.avi"
 
-        if not os.path.exists(output_file):
-            video_path = os.path.join(video_dir, video_id)
-            suffix = "_rgb.avi"
+                if os.path.exists(video_path+suffix):
+                    video_file = video_path+suffix
+                else:
+                    continue
 
-            if os.path.exists(video_path+suffix):
-                video_file = video_path+suffix
-            else:
-                continue
+                frame_offset = labels[j][event_id]
+                frame_select_filter = '' if frame_offset == 0 else f'select=gte(n\,{str(frame_offset)}),'
 
-            frame_offset = labels[event_id]
-            frame_select_filter = '' if frame_offset == 0 else f'select=gte(n\,{str(frame_offset)}),'
+                cmd = f'ffmpeg -hide_banner -loglevel panic -y -i {video_file} -strict -2 -vf "{frame_select_filter}scale=640:360" {output_file}'
+                os.system(cmd)
 
-            cmd = f'ffmpeg -hide_banner -loglevel panic -y -i {video_file} -strict -2 -vf "{frame_select_filter}scale=640:360" {output_file}'
-            os.system(cmd)
+            video = cv2.VideoCapture(output_file)
+            fps = int(video.get(cv2.CAP_PROP_FPS))
+            width = int(video.get(cv2.CAP_PROP_FRAME_WIDTH))
+            height = int(video.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            num_frames = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
 
-        video = cv2.VideoCapture(output_file)
-        fps = int(video.get(cv2.CAP_PROP_FPS))
-        width = int(video.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(video.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        num_frames = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
+            data_dict[f"video_file_{j}"] = output_file
+            data_dict[f"seq_len_{j}"] = num_frames
+            data_dict[f"label_{j}"] = labels[j][event_id]
 
-        data_dict = {"id": i, "name": event_id, "video_file": os.path.join("processed_videos", event_id+".mp4"),
-                     "seq_len": num_frames, "label": labels[event_id]}
         dataset.append(data_dict)
     with open(save_file, 'wb') as f:
         pickle.dump(dataset, f)

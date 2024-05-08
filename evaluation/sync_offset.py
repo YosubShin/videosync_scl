@@ -21,80 +21,70 @@ class SyncOffset(object):
 
     def __init__(self, cfg):
         self.cfg = cfg
-        self.downstream_task = True
+        self.downstream_task = False
 
-    def evaluate(self, dataset, cur_epoch, summary_writer):
-        """Labeled evaluation."""
+    def evaluate(self, model, train_loader, val_loader, cur_epoch, summary_writer):
+        model.eval()
 
-        train_embs = dataset['train_dataset']['embs']
-        train_names = dataset['train_dataset']['names']
-        train_labels = dataset['train_dataset']['labels']
+        abs_frame_errors = []
+        with torch.no_grad():
+            for videos, labels, seq_lens, chosen_steps, video_masks, names in val_loader:
+                embs = []
+                for i in [0, 1]:
+                    video = videos[i]
+                    seq_len = seq_lens[i]
+                    chosen_step = chosen_steps[i]
+                    video_mask = video_masks[i]
+                    name = names[i]
 
-        self.get_sync_offset(
-            train_embs,
-            train_names,
-            train_labels,
-            cur_epoch, summary_writer,
-            '%s_train' % dataset['name'])
+                    emb = self.get_embs(model, video, labels[i], seq_len, chosen_step, video_mask, name)                
+                    embs.append(emb)
 
-        val_embs = dataset['val_dataset']['embs']
-        val_names = dataset['val_dataset']['names']
-        val_labels = dataset['val_dataset']['labels']
+                abs_frame_error = self.get_sync_offset(embs[0], labels[0], embs[1], labels[1])
+                abs_frame_errors.append(abs_frame_error)
 
-        sync_offset = self.get_sync_offset(
-            val_embs, val_names, val_labels, cur_epoch, summary_writer, '%s_val' % dataset['name'])
-        return sync_offset
+                print('names', names, 'labels', labels, 'abs_frame_error', abs_frame_error)
 
-    def get_sync_offset(self, embs_list, names, labels, cur_epoch, summary_writer, split):
-        num_seqs = len(embs_list)
+        mean_abs_frame_error = np.mean(abs_frame_errors)
+        std_dev = np.std(abs_frame_errors)
 
-        name_to_idx = {}
-        for i in range(num_seqs):
-            name = names[i]
-            name_to_idx[name] = i
+        logger.info('epoch[{}/{}] mean abs frame error: {:.4f}'.format(
+            cur_epoch, self.cfg.TRAIN.MAX_EPOCHS, mean_abs_frame_error))
+        logger.info('epoch[{}/{}] std dev: {:.4f}'.format(
+            cur_epoch, self.cfg.TRAIN.MAX_EPOCHS, std_dev))
+        logger.info('epoch[{}/{}] len(abs_frame_errors): {}'.format(
+            cur_epoch, self.cfg.TRAIN.MAX_EPOCHS, len(abs_frame_errors)))
 
-        num_pairs = int(num_seqs / 2)
-        frame_errors = np.zeros(num_pairs)
-        idx = 0
 
-        frame_error = 0
-        for i in range(num_seqs):
-            query_feats = embs_list[i]
-            name = names[i]
-            label = labels[i][0]
+    def get_sync_offset(self, embs0, label0, embs1, label1):
+        return decision_offset(torch.tensor(embs0).cuda(), torch.tensor(embs1).cuda(), label0 - label1)
 
-            camera = name[5:8]
-            if camera != '001':
-                continue
 
-            # Get the other angle's filename.
-            candidate_name = f'{name[:5]}002{name[8:]}'
-            candidate_i = name_to_idx[candidate_name]
-            candidate_feats = embs_list[candidate_i]
-            candidate_label = labels[candidate_i][0]
+    def get_embs(self, model, video, frame_label, seq_len, chosen_steps, video_masks, name):
+        logger.info(f'name: {name}, video.shape: {video.shape}, frame_label: {frame_label}, seq_len: {seq_len}, chosen_steps.shape: {chosen_steps.shape}, video_masks.shape: {video_masks.shape}')
 
-            print('name', name, 'candidate_name', candidate_name)
-            print('query_feats.shape', query_feats.shape,
-                  'candiate_feats.shape', candidate_feats.shape)
-            print('label', str(label), 'candidate_label', str(
-                candidate_label), 'label - candidate_label', str(label - candidate_label))
+        assert video.size(0) == 1  # batch_size==1
+        assert video.size(1) == int(seq_len.item())
 
-            frame_error = decision_offset(torch.tensor(query_feats).cuda(
-            ), torch.tensor(candidate_feats).cuda(), label - candidate_label)
-            print('frame error', frame_error)
+        embs = []
+        seq_len = seq_len.item()
+        num_batches = 1
+        frames_per_batch = int(math.ceil(float(seq_len)/num_batches))
 
-            frame_errors[idx] = frame_error
-            idx += 1
+        num_steps = seq_len
+        steps = torch.arange(0, num_steps)
+        curr_data = video[:, steps]
 
-        avg_frame_error = np.mean(frame_errors)
-        std_dev = np.std(frame_errors)
+        if self.cfg.USE_AMP:
+            with torch.cuda.amp.autocast():
+                emb_feats = model(curr_data, num_steps)
+        else:
+            emb_feats = model(curr_data, num_steps)
+        embs.append(emb_feats[0].cpu())
+        embs = torch.cat(embs, dim=0)
+        embs = embs.numpy()
 
-        logger.info('epoch[{}/{}] {} set avg frame error: {:.4f}'.format(
-            cur_epoch, self.cfg.TRAIN.MAX_EPOCHS, split, avg_frame_error))
-        logger.info('epoch[{}/{}] {} set std dev: {:.4f}'.format(
-            cur_epoch, self.cfg.TRAIN.MAX_EPOCHS, split, std_dev))
-
-        return avg_frame_error
+        return embs
 
 
 def get_similarity(view1, view2):
