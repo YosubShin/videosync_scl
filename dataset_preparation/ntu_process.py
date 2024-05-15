@@ -64,7 +64,7 @@ def main(split="train"):
                     continue
 
                 frame_offset = labels[j][event_id]
-                frame_select_filter = '' if frame_offset == 0 else f'select=gte(n\,{str(frame_offset)}),'
+                frame_select_filter = '' if frame_offset == 0 else f'select=gte(n\,{str(frame_offset)}),setpts=PTS-STARTPTS,'
 
                 cmd = f'ffmpeg -hide_banner -loglevel panic -y -i {video_file} -strict -2 -vf "{frame_select_filter}scale=640:360" {output_file}'
                 os.system(cmd)
