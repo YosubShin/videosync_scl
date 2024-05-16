@@ -25,14 +25,14 @@ def main(split="train"):
         save_file = os.path.join(data_root, f"val.pkl")
 
     images_dir = os.path.join(data_root, "raw_images")
-    ntu_syn_dir = os.path.join(data_root, "CVID-SYN/pose/test")
+    cvid_syn_dir = os.path.join(data_root, "CVID-SYN/pose")
 
     labels = [{}, {}]
     event_ids = set()
 
     video_pair_ids = set()
 
-    for root, _, files in os.walk(ntu_syn_dir):
+    for root, _, files in os.walk(cvid_syn_dir):
         for i, file in enumerate(files):
             if not file.endswith('.json'):
                 continue
@@ -78,15 +78,13 @@ def main(split="train"):
 
                 images_path = os.path.join(images_dir, view_dir, action_dir)
                 chunk_index = int(event_id[8:10])
-                start_frame = chunk_index * 120 + labels[j][event_id]
+                frame_offset = labels[j][event_id]
+                start_frame = chunk_index * 120 + frame_offset
 
                 if not os.path.exists(images_path):
                     continue
 
-                frame_offset = labels[j][event_id]
-                frame_select_filter = '' if frame_offset == 0 else f'select=gte(n\,{str(frame_offset)}),'
-
-                cmd = f'ffmpeg -hide_banner -loglevel panic -y -start_number {start_frame} -i %04d.jpg -strict -2 -frames:v 120 -vf "scale=640:360" {output_file}'
+                cmd = f'ffmpeg -hide_banner -loglevel panic -y -start_number {start_frame} -i {images_path}/%04d.jpg -strict -2 -frames:v 120 -vf "scale=640:360" {output_file}'
                 os.system(cmd)
 
             video = cv2.VideoCapture(output_file)
@@ -99,10 +97,14 @@ def main(split="train"):
             data_dict[f"seq_len_{j}"] = num_frames
             data_dict[f"label_{j}"] = labels[j][event_id]
 
+        if ("video_file_0" not in data_dict):
+            print(f"skipping event_id: {event_id}")
+            continue
+
         dataset.append(data_dict)
     with open(save_file, 'wb') as f:
         pickle.dump(dataset, f)
-    print(f"{len(dataset)} {split} samples of NTU dataset have been writen.")
+    print(f"{len(dataset)} {split} samples of CVID dataset have been writen.")
 
 
 if __name__ == '__main__':

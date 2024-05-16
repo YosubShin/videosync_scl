@@ -100,14 +100,22 @@ def get_similarity(view1, view2):
 
 
 def decision_offset(view1, view2, label):
+    logger.info(f'view1.shape: {view1.shape}')
+    logger.info(f'view2.shape: {view2.shape}')
+    
     sim_12 = get_similarity(view1, view2)
 
     softmaxed_sim_12 = Fun.softmax(sim_12, dim=1)
+
+    logger.info(f'softmaxed_sim_12.shape: {softmaxed_sim_12.shape}')
+    logger.info(f'softmaxed_sim_12: {softmaxed_sim_12}')
 
     ground = (torch.tensor(
         [i * 1.0 for i in range(view1.size(0))]).cuda()).reshape(-1, 1)
 
     predict = softmaxed_sim_12.argmax(dim=1)
+
+    logger.info(f'predict: {predict}')
 
     length1 = ground.size(0)
 
@@ -119,6 +127,9 @@ def decision_offset(view1, view2, label):
 
         frame_error = (p - g)
         frames.append(frame_error)
+
+    logger.info(f'len(frames): {len(frames)}')
+    logger.info(f'frames: {frames}')
 
     median_frames = np.median(frames)
 

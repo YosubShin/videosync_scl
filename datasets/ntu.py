@@ -67,7 +67,7 @@ class Ntu(torch.utils.data.Dataset):
             video, _, info = read_video(video_file, pts_unit='sec')
             seq_len = len(video)
             if seq_len == 0:
-                print(video_file)
+                print('seq_len is 0', video_file)
             # T H W C -> T C H W, [0,1] tensor
             video = video.permute(0, 3, 1, 2).float() / 255.0
 
