@@ -53,6 +53,9 @@ class Ntu(torch.utils.data.Dataset):
         return len(self.dataset)
 
     def __getitem__(self, index):
+        if self.cfg.SSL:
+            return self.get_training_item(index)
+
         videos = []
         labels = []
         seq_lens = []
@@ -61,7 +64,8 @@ class Ntu(torch.utils.data.Dataset):
         names = []
 
         for i, camera_id in enumerate(['001', '002']):
-            name = self.dataset[index][f"video_file_{i}"].split("/")[-1].split(".")[0]
+            name = self.dataset[index][f"video_file_{i}"].split(
+                "/")[-1].split(".")[0]
             video_file = os.path.join(
                 self.cfg.PATH_TO_DATASET, self.dataset[index][f"video_file_{i}"])
             video, _, info = read_video(video_file, pts_unit='sec')
@@ -74,7 +78,8 @@ class Ntu(torch.utils.data.Dataset):
             steps = torch.arange(0, seq_len, self.cfg.DATA.SAMPLE_ALL_STRIDE)
             video = video[steps.long()]
             video = self.data_preprocess(video)
-            label = torch.full((1, ), self.dataset[index][f"label_{i}"], dtype=torch.int32)
+            label = torch.full(
+                (1, ), self.dataset[index][f"label_{i}"], dtype=torch.int32)
             seq_len = len(steps)
             chosen_step = steps.clone()
             video_mask = torch.ones(seq_len)
@@ -93,3 +98,29 @@ class Ntu(torch.utils.data.Dataset):
         # video_masks = torch.stack(video_masks, dim=0)
 
         return videos, labels, seq_lens, chosen_steps, video_masks, names
+
+    def get_training_item(self, index):
+        # XXX: Take the first video from the pair of videos. We will figure out how to utilize the second videos later.
+        name = self.dataset[index][f"video_file_0"].split(
+            "/")[-1].split(".")[0]
+        video_file = os.path.join(
+            self.cfg.PATH_TO_DATASET, self.dataset[index][f"video_file_0"])
+        video, _, info = read_video(video_file, pts_unit='sec')
+        seq_len = len(video)
+        frame_label = -1 * torch.ones(seq_len)
+
+        names = [name, name]
+        steps_0, chosen_step_0, video_mask0 = self.sample_frames(
+            seq_len, self.num_frames)
+        view_0 = self.data_preprocess(video[steps_0.long()])
+        label_0 = frame_label[chosen_step_0.long()]
+        steps_1, chosen_step_1, video_mask1 = self.sample_frames(
+            seq_len, self.num_frames, pre_steps=steps_0)
+        view_1 = self.data_preprocess(video[steps_1.long()])
+        label_1 = frame_label[chosen_step_1.long()]
+        videos = torch.stack([view_0, view_1], dim=0)
+        labels = torch.stack([label_0, label_1], dim=0)
+        seq_lens = torch.tensor([seq_len, seq_len])
+        chosen_steps = torch.stack([chosen_step_0, chosen_step_1], dim=0)
+        video_mask = torch.stack([video_mask0, video_mask1], dim=0)
+        return videos, labels, seq_lens, chosen_steps, video_mask, names
