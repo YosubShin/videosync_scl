@@ -42,6 +42,7 @@ class Ntu(torch.utils.data.Dataset):
         self.error_videos = []
         self.dataset = dataset
 
+        self.num_frames = cfg.TRAIN.NUM_FRAMES
         if self.cfg.SSL and self.mode == "train":
             self.data_preprocess = create_ssl_data_augment(cfg, augment=True)
         elif self.mode == "train":
@@ -106,12 +107,17 @@ class Ntu(torch.utils.data.Dataset):
         video_file = os.path.join(
             self.cfg.PATH_TO_DATASET, self.dataset[index][f"video_file_0"])
         video, _, info = read_video(video_file, pts_unit='sec')
+        # T H W C -> T C H W, [0,1] tensor
+        video = video.permute(0, 3, 1, 2).float() / 255.0
         seq_len = len(video)
         frame_label = -1 * torch.ones(seq_len)
 
         names = [name, name]
         steps_0, chosen_step_0, video_mask0 = self.sample_frames(
             seq_len, self.num_frames)
+
+        logger.info(f'name: {name}, video[steps_0.long()].shape: {video[steps_0.long()].shape}, video[steps_0.long()].dtype: {video[steps_0.long()].dtype}')
+
         view_0 = self.data_preprocess(video[steps_0.long()])
         label_0 = frame_label[chosen_step_0.long()]
         steps_1, chosen_step_1, video_mask1 = self.sample_frames(
@@ -124,3 +130,65 @@ class Ntu(torch.utils.data.Dataset):
         chosen_steps = torch.stack([chosen_step_0, chosen_step_1], dim=0)
         video_mask = torch.stack([video_mask0, video_mask1], dim=0)
         return videos, labels, seq_lens, chosen_steps, video_mask, names
+
+    def sample_frames(self, seq_len, num_frames, pre_steps=None):
+        # When dealing with very long videos we can choose to sub-sample to fit
+        # data in memory. But be aware this also evaluates over a subset of frames.
+        # Subsampling the validation set videos when reporting performance is not
+        # recommended.
+        sampling_strategy = self.cfg.DATA.SAMPLING_STRATEGY
+        pre_offset = min(pre_steps) if pre_steps is not None else None
+
+        if sampling_strategy == 'offset_uniform':
+            # Sample a random offset less than a provided max offset. Among all frames
+            # higher than the chosen offset, randomly sample num_frames
+            if seq_len >= num_frames:
+                # Returns a random permutation of integers from 0 to n - 1.
+                steps = torch.randperm(seq_len)
+                steps = torch.sort(steps[:num_frames])[0]
+            else:
+                steps = torch.arange(0, num_frames)
+        elif sampling_strategy == 'time_augment':
+            num_valid = min(seq_len, num_frames)
+            expand_ratio = np.random.uniform(
+                low=1.0, high=self.cfg.DATA.SAMPLING_REGION) if self.cfg.DATA.SAMPLING_REGION > 1 else 1.0
+
+            block_size = math.ceil(expand_ratio*num_valid)
+            if pre_steps is not None and self.cfg.DATA.CONSISTENT_OFFSET != 0:
+                shift = int((1-self.cfg.DATA.CONSISTENT_OFFSET)*num_valid)
+                offset = np.random.randint(low=max(0, min(
+                    seq_len-block_size, pre_offset-shift)), high=max(1, min(seq_len-block_size+1, pre_offset+shift+1)))
+            else:
+                offset = np.random.randint(
+                    low=0, high=max(seq_len-block_size, 1))
+            steps = offset + torch.randperm(block_size)[:num_valid]
+            steps = torch.sort(steps)[0]
+            if num_valid < num_frames:
+                steps = F.pad(steps, (0, num_frames-num_valid),
+                              "constant", seq_len)
+        else:
+            raise ValueError('Sampling strategy %s is unknown. Supported values are '
+                             'stride, offset_uniform .' % sampling_strategy)
+
+        if 'tcn' in self.cfg.TRAINING_ALGO:
+            pos_window = self.cfg.TCN.POSITIVE_WINDOW
+            pos_steps = steps + torch.randint(-pos_window, 0, steps.size())
+            steps = torch.stack([steps, pos_steps], dim=0)
+            steps = steps.transpose(0, 1).contiguous().view(-1)
+            num_frames = num_frames*2
+
+        video_mask = torch.ones(num_frames)
+        video_mask[steps < 0] = 0
+        video_mask[steps >= seq_len] = 0
+        # Store chosen indices.
+        chosen_steps = torch.clamp(steps.clone(), 0, seq_len - 1)
+        if self.num_contexts == 1:
+            steps = chosen_steps
+        else:
+            # Get multiple context steps depending on config at selected steps.
+            context_stride = self.cfg.DATA.CONTEXT_STRIDE
+            steps = steps.view(-1, 1) + context_stride * \
+                torch.arange(-(self.num_contexts-1), 1).view(1, -1)
+            steps = torch.clamp(steps.view(-1), 0, seq_len - 1)
+
+        return steps, chosen_steps, video_mask

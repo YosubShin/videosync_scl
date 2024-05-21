@@ -10,6 +10,9 @@ import torch.nn.functional as F
 import numpy as np
 import math
 
+import utils.logging as logging
+logger = logging.get_logger(__name__)
+
 
 def safe_div(a, b):
     out = a / b
@@ -44,6 +47,8 @@ class SCL(object):
         if video_masks is not None:
             video_masks = video_masks.view(-1, 1, num_steps)
         # add mlp projection head
+
+        logger.info(f'videos.shape: {videos.shape}, num_frames: {num_frames}, video_masks.shape: {video_masks.shape}, self.cfg.MODEL.PROJECTION: {self.cfg.MODEL.PROJECTION}')
         embs = model(videos, num_frames, video_masks=video_masks,
                      project=self.cfg.MODEL.PROJECTION)
         embs = embs.view(batch_size, num_views, num_frames, embs.size(-1))

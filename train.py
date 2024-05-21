@@ -51,6 +51,9 @@ def train(cfg, train_loader, model, optimizer, scheduler, algo, cur_epoch, summa
                     loss_dict = algo.compute_loss(
                         model, videos, seq_lens, chosen_steps, video_masks)
             loss = loss_dict["loss"]
+
+            logger.info(f'cur_iter: {cur_iter}, loss_dict: {loss_dict}')
+
             scaler.scale(loss).backward()
             if cfg.OPTIMIZER.GRAD_CLIP > 0:
                 scaler.unscale_(optimizer)
