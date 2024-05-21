@@ -16,7 +16,8 @@ def main(split="train"):
         save_file = os.path.join(data_root, f"val.pkl")
 
     video_dir = os.path.join(data_root, "raw_videos")
-    ntu_syn_dir = os.path.join(data_root, "NTU-SYN/pose/test")
+    ntu_syn_dir = os.path.join(
+        data_root, f"NTU-SYN/pose/{'train' if split == 'train' else 'test'}")
 
     labels = [{}, {}]
     event_ids = set()
@@ -44,13 +45,11 @@ def main(split="train"):
                 with open(os.path.join(root, file), 'r') as f:
                     data = json.load(f)
                     labels[i][event_id] = data['category_id']
-            
-            
 
     dataset = []
 
     for i, event_id in tqdm(enumerate(event_ids), total=len(event_ids)):
-        data_dict = {"id": i, "name": event_id }
+        data_dict = {"id": i, "name": event_id}
         for j, camera_id in enumerate(['001', '002']):
             video_id = f'{event_id[:5]}{camera_id}{event_id[8:]}'
             output_file = os.path.join(output_dir, video_id) + ".mp4"
