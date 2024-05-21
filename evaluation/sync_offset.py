@@ -39,7 +39,7 @@ class SyncOffset(object):
 
                     emb = self.get_embs(model, video, labels[i], seq_len, chosen_step, video_mask, name)                
                     embs.append(emb)
-
+                
                 abs_frame_error = self.get_sync_offset(embs[0], labels[0], embs[1], labels[1])
                 abs_frame_errors.append(abs_frame_error)
 
@@ -100,6 +100,9 @@ def get_similarity(view1, view2):
 
 
 def decision_offset(view1, view2, label):
+    # indices = torch.randperm(view2.size(0))
+    view2 = torch.zeros_like(view2)
+    
     logger.info(f'view1.shape: {view1.shape}')
     logger.info(f'view2.shape: {view2.shape}')
     
