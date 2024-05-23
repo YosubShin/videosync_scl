@@ -4,8 +4,10 @@ from copy import deepcopy
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+import utils.logging as logging
 from models.resnet_c2d import *
+
+logger = logging.get_logger(__name__)
 
 
 def attention(Q, K, V, mask=None, dropout=None, visual=False):
@@ -61,10 +63,10 @@ class MultiheadedAttention(nn.Module):
         assert self.d_model % H == 0
 
     def forward(self, Q, K, V, mask=None):
-        ''' 
+        '''
             Q, K, V: (B, Sq, Dq), (B, Sk, Dk), (B, Sv, Dv)
             mask: (B, 1, Sk)
-            Sk = Sv, 
+            Sk = Sv,
             Dk != self.d_k
         '''
         B, Sq, d_model_Q = Q.shape
@@ -328,6 +330,8 @@ class TransformerModel(nn.Module):
         batch_size, num_steps, c, h, w = x.shape
         frames_per_batch = self.cfg.MODEL.BASE_MODEL.FRAMES_PER_BATCH
         num_blocks = int(math.ceil(float(num_steps)/frames_per_batch))
+        logger.info(
+            f'num_blocks: {num_blocks}, num_steps: {num_steps}, frames_per_batch: {frames_per_batch}')
         backbone_out = []
         for i in range(num_blocks):
             curr_idx = i * frames_per_batch
@@ -337,17 +341,39 @@ class TransformerModel(nn.Module):
             self.backbone.eval()
             with torch.no_grad():
                 curr_emb = self.backbone(curr_data)
+
+            logger.info(
+                f'curr_emb.shape: {curr_emb.shape}, curr_emb.max: {curr_emb.max()}, curr_emb.min: {curr_emb.min()}, torch.isnan(input).any(curr_emb): {torch.isnan(curr_emb).any()}, torch.isinf(input).any(curr_emb): {torch.isinf(curr_emb).any()}')
+
             curr_emb = self.res_finetune(curr_emb)
+
+            logger.info(
+                f'curr_emb.shape: {curr_emb.shape}, curr_emb.max: {curr_emb.max()}, curr_emb.min: {curr_emb.min()}, torch.isnan(input).any(curr_emb): {torch.isnan(curr_emb).any()}, torch.isinf(input).any(curr_emb): {torch.isinf(curr_emb).any()}')
+
             _, out_c, out_h, out_w = curr_emb.size()
             curr_emb = curr_emb.contiguous().view(batch_size, cur_steps, out_c, out_h, out_w)
             backbone_out.append(curr_emb)
         x = torch.cat(backbone_out, dim=1)
 
+        logger.info(
+            f'x.shape: {x.shape}, x.max: {x.max()}, x.min: {x.min()}, torch.isnan(input).any(x): {torch.isnan(x).any()}, torch.isinf(input).any(x): {torch.isinf(x).any()}')
+
         x = self.embed(x, video_masks=video_masks)
+
+        logger.info(
+            f'x.shape: {x.shape}, x.max: {x.max()}, x.min: {x.min()}, torch.isnan(input).any(x): {torch.isnan(x).any()}, torch.isinf(input).any(x): {torch.isinf(x).any()}')
 
         if self.cfg.MODEL.PROJECTION and project:
             x = self.ssl_projection(x)
+
+            logger.info(
+                f'x.shape: {x.shape}, x.max: {x.max()}, x.min: {x.min()}, torch.isnan(input).any(x): {torch.isnan(x).any()}, torch.isinf(input).any(x): {torch.isinf(x).any()}')
+
             x = F.normalize(x, dim=-1)
+
+            logger.info(
+                f'x.shape: {x.shape}, x.max: {x.max()}, x.min: {x.min()}, torch.isnan(input).any(x): {torch.isnan(x).any()}, torch.isinf(input).any(x): {torch.isinf(x).any()}')
+
         elif self.cfg.MODEL.L2_NORMALIZE:
             x = F.normalize(x, dim=-1)
         if classification:
