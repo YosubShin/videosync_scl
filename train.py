@@ -39,6 +39,14 @@ def train(cfg, train_loader, model, optimizer, scheduler, algo, cur_epoch, summa
     if du.is_root_proc():
         train_loader = tqdm(train_loader, total=len(train_loader))
     for cur_iter, (videos, _labels, seq_lens, chosen_steps, video_masks, names) in enumerate(train_loader):
+        # XXX: Train doesn't work without skipping some indices.
+        if cur_iter == 0 or cur_iter == 1:
+            continue
+
+        if cur_iter > 1000:
+            break
+
+        logger.info(f'cur_iter: {cur_iter}, name: {names[0]}')
         optimizer.zero_grad()
         if cfg.USE_AMP:
             torch.autograd.set_detect_anomaly(True)
@@ -219,7 +227,7 @@ def main():
         train(cfg, train_loader, model, optimizer,
               scheduler, algo, cur_epoch, summary_writer)
         if (cur_epoch+1) % cfg.EVAL.VAL_INTERVAL == 0 or cur_epoch == cfg.TRAIN.MAX_EPOCHS-1:
-            val(cfg, val_loader, model, algo, cur_epoch, summary_writer)
+            # val(cfg, val_loader, model, algo, cur_epoch, summary_writer)
             if cfg.DATASETS[0] == "finegym":
                 from evaluate_finegym import evaluate_once
                 evaluate_once(cfg, model, train_loader, val_loader, train_emb_loader, val_emb_loader,

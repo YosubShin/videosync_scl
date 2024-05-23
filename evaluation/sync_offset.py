@@ -28,7 +28,11 @@ class SyncOffset(object):
 
         abs_frame_errors = []
         with torch.no_grad():
+            count = 0
             for videos, labels, seq_lens, chosen_steps, video_masks, names in val_loader:
+                if count > 100:
+                    break
+
                 embs = []
                 for i in [0, 1]:
                     video = videos[i]
@@ -37,13 +41,17 @@ class SyncOffset(object):
                     video_mask = video_masks[i]
                     name = names[i]
 
-                    emb = self.get_embs(model, video, labels[i], seq_len, chosen_step, video_mask, name)                
+                    emb = self.get_embs(
+                        model, video, labels[i], seq_len, chosen_step, video_mask, name)
                     embs.append(emb)
 
-                abs_frame_error = self.get_sync_offset(embs[0], labels[0], embs[1], labels[1])
+                abs_frame_error = self.get_sync_offset(
+                    embs[0], labels[0], embs[1], labels[1])
                 abs_frame_errors.append(abs_frame_error)
 
-                print('names', names, 'labels', labels, 'abs_frame_error', abs_frame_error)
+                print('names', names, 'labels', labels,
+                      'abs_frame_error', abs_frame_error)
+                count += 1
 
         mean_abs_frame_error = np.mean(abs_frame_errors)
         std_dev = np.std(abs_frame_errors)
@@ -55,13 +63,12 @@ class SyncOffset(object):
         logger.info('epoch[{}/{}] len(abs_frame_errors): {}'.format(
             cur_epoch, self.cfg.TRAIN.MAX_EPOCHS, len(abs_frame_errors)))
 
-
     def get_sync_offset(self, embs0, label0, embs1, label1):
         return decision_offset(torch.tensor(embs0).cuda(), torch.tensor(embs1).cuda(), label0 - label1)
 
-
     def get_embs(self, model, video, frame_label, seq_len, chosen_steps, video_masks, name):
-        logger.info(f'name: {name}, video.shape: {video.shape}, frame_label: {frame_label}, seq_len: {seq_len}, chosen_steps.shape: {chosen_steps.shape}, video_masks.shape: {video_masks.shape}')
+        logger.info(
+            f'name: {name}, video.shape: {video.shape}, seq_len: {seq_len}')
 
         assert video.size(0) == 1  # batch_size==1
         assert video.size(1) == int(seq_len.item())
@@ -102,7 +109,7 @@ def get_similarity(view1, view2):
 def decision_offset(view1, view2, label):
     logger.info(f'view1.shape: {view1.shape}')
     logger.info(f'view2.shape: {view2.shape}')
-    
+
     sim_12 = get_similarity(view1, view2)
 
     softmaxed_sim_12 = Fun.softmax(sim_12, dim=1)

@@ -9,7 +9,6 @@ from models.resnet_c2d import *
 
 logger = logging.get_logger(__name__)
 
-
 def attention(Q, K, V, mask=None, dropout=None, visual=False):
     # Q, K, V are (B, *(H), seq_len, d_model//H = d_k)
     # mask is     (B,    1,       1,               Ss)
@@ -349,6 +348,12 @@ class TransformerModel(nn.Module):
 
             logger.info(
                 f'curr_emb.shape: {curr_emb.shape}, curr_emb.max: {curr_emb.max()}, curr_emb.min: {curr_emb.min()}, torch.isnan(input).any(curr_emb): {torch.isnan(curr_emb).any()}, torch.isinf(input).any(curr_emb): {torch.isinf(curr_emb).any()}')
+
+            for name, param in self.res_finetune.named_parameters():
+                if param.grad is not None and torch.isnan(param.grad).any():
+                    logger.info(f"NaNs detected in gradient of {name}")
+                elif param.grad is not None and torch.isinf(param.grad).any():
+                    logger.info(f"Infs detected in gradient of {name}")
 
             _, out_c, out_h, out_w = curr_emb.size()
             curr_emb = curr_emb.contiguous().view(batch_size, cur_steps, out_c, out_h, out_w)

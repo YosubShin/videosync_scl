@@ -54,7 +54,7 @@ class Ntu(torch.utils.data.Dataset):
         return len(self.dataset)
 
     def __getitem__(self, index):
-        if self.cfg.SSL:
+        if self.cfg.SSL and self.mode == "train":
             return self.get_training_item(index)
 
         videos = []
@@ -116,7 +116,8 @@ class Ntu(torch.utils.data.Dataset):
         steps_0, chosen_step_0, video_mask0 = self.sample_frames(
             seq_len, self.num_frames)
 
-        logger.info(f'name: {name}, video[steps_0.long()].shape: {video[steps_0.long()].shape}, video[steps_0.long()].dtype: {video[steps_0.long()].dtype}')
+        logger.info(
+            f'name: {name}, video[steps_0.long()].shape: {video[steps_0.long()].shape}, video[steps_0.long()].dtype: {video[steps_0.long()].dtype}')
 
         view_0 = self.data_preprocess(video[steps_0.long()])
         label_0 = frame_label[chosen_step_0.long()]
