@@ -6,9 +6,12 @@ from scipy.stats import kendalltau
 import utils.logging as logging
 from torch.nn import functional as Fun
 import math
+import wandb
 
 
 logger = logging.get_logger(__name__)
+
+sample_rate = 0.05
 
 
 def softmax(w, t=1.0):
@@ -23,14 +26,14 @@ class SyncOffset(object):
         self.cfg = cfg
         self.downstream_task = False
 
-    def evaluate(self, model, train_loader, val_loader, cur_epoch, summary_writer):
+    def evaluate(self, model, train_loader, val_loader, cur_epoch, summary_writer, sample=False):
         model.eval()
 
         abs_frame_errors = []
         with torch.no_grad():
             count = 0
             for videos, labels, seq_lens, chosen_steps, video_masks, names in val_loader:
-                if count > 100:
+                if sample and count / len(val_loader) > sample_rate:
                     break
 
                 embs = []
@@ -49,19 +52,28 @@ class SyncOffset(object):
                     embs[0], labels[0], embs[1], labels[1])
                 abs_frame_errors.append(abs_frame_error)
 
-                print('names', names, 'labels', labels,
-                      'abs_frame_error', abs_frame_error)
+                logger.info(
+                    f'names: {names}, labels: {labels}, abs_frame_error: {abs_frame_error}')
                 count += 1
 
         mean_abs_frame_error = np.mean(abs_frame_errors)
         std_dev = np.std(abs_frame_errors)
 
-        logger.info('epoch[{}/{}] mean abs frame error: {:.4f}'.format(
-            cur_epoch, self.cfg.TRAIN.MAX_EPOCHS, mean_abs_frame_error))
-        logger.info('epoch[{}/{}] std dev: {:.4f}'.format(
-            cur_epoch, self.cfg.TRAIN.MAX_EPOCHS, std_dev))
-        logger.info('epoch[{}/{}] len(abs_frame_errors): {}'.format(
-            cur_epoch, self.cfg.TRAIN.MAX_EPOCHS, len(abs_frame_errors)))
+        if not sample:
+            logger.info('epoch[{}/{}] mean abs frame error: {:.4f}'.format(
+                cur_epoch, self.cfg.TRAIN.MAX_EPOCHS, mean_abs_frame_error))
+            logger.info('epoch[{}/{}] std dev: {:.4f}'.format(
+                cur_epoch, self.cfg.TRAIN.MAX_EPOCHS, std_dev))
+            logger.info('epoch[{}/{}] len(abs_frame_errors): {}'.format(
+                cur_epoch, self.cfg.TRAIN.MAX_EPOCHS, len(abs_frame_errors)))
+
+            wandb.log({"abs_frame_error_mean": mean_abs_frame_error,
+                       "abs_frame_error_std_dev": std_dev})
+
+        return {
+            'abs_frame_error_mean': mean_abs_frame_error,
+            'abs_frame_error_std_dev': std_dev
+        }
 
     def get_sync_offset(self, embs0, label0, embs1, label1):
         return decision_offset(torch.tensor(embs0).cuda(), torch.tensor(embs1).cuda(), label0 - label1)

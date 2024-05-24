@@ -23,7 +23,7 @@ from evaluation import get_tasks
 logger = logging.get_logger(__name__)
 
 
-def train(cfg, train_loader, model, optimizer, scheduler, algo, cur_epoch, summary_writer):
+def train(cfg, train_loader, model, optimizer, scheduler, algo, cur_epoch, summary_writer, val_loader, iterator_tasks):
     model.train()
     optimizer.zero_grad()
     data_size = len(train_loader)
@@ -36,16 +36,12 @@ def train(cfg, train_loader, model, optimizer, scheduler, algo, cur_epoch, summa
         logger.info(f"update the training batch sampler to epoch {cur_epoch}")
     total_loss = {}
 
+    from evaluation.sync_offset import SyncOffset
+    sync_offset = SyncOffset(cfg)
+
     if du.is_root_proc():
         train_loader = tqdm(train_loader, total=len(train_loader))
     for cur_iter, (videos, _labels, seq_lens, chosen_steps, video_masks, names) in enumerate(train_loader):
-        # XXX: Train doesn't work without skipping some indices.
-        if cur_iter == 0 or cur_iter == 1:
-            continue
-
-        if cur_iter > 1000:
-            break
-
         logger.info(f'cur_iter: {cur_iter}, name: {names[0]}')
         optimizer.zero_grad()
         if cfg.USE_AMP:
@@ -71,6 +67,7 @@ def train(cfg, train_loader, model, optimizer, scheduler, algo, cur_epoch, summa
             # Updates the scale for next iteration.
             scaler.update()
         else:
+            torch.autograd.set_detect_anomaly(True)
             if cfg.TRAINING_ALGO == 'classification':
                 loss_dict = algo.compute_loss(
                     model, videos, _labels, seq_lens, chosen_steps, video_masks)
@@ -93,7 +90,7 @@ def train(cfg, train_loader, model, optimizer, scheduler, algo, cur_epoch, summa
             total_loss[key] += du.all_reduce([loss_dict[key]]
                                              )[0].item() / data_size
 
-        if cfg.NUM_GPUS == 1 and cur_iter % cfg.LOGGING.REPORT_INTERVAL == 0:
+        if du.is_root_proc() and cur_iter % cfg.LOGGING.REPORT_INTERVAL == 0:
             print(names)
             logger.info(
                 f"iter {data_size * cur_epoch + cur_iter}, training loss: {loss.item():.3f}")
@@ -105,6 +102,16 @@ def train(cfg, train_loader, model, optimizer, scheduler, algo, cur_epoch, summa
             else:
                 summary_writer.add_video(f'{names[0]}', unnorm(
                     visual_video[::cfg.DATA.NUM_CONTEXTS]).unsqueeze(0), 0, fps=4)
+
+            sync_offset_res = sync_offset.evaluate(
+                model, train_loader, val_loader, cur_epoch, summary_writer, sample=True)
+
+            wandb.log({
+                "loss": loss.item(),
+                "abs_frame_error_mean_sampled": sync_offset_res['abs_frame_error_mean'],
+                "abs_frame_error_std_dev_sampled": sync_offset_res['abs_frame_error_std_dev']
+            })
+        du.synchronize()
 
     summary_writer.add_scalar('train/learning_rate',
                               get_lr(optimizer)[0], cur_epoch)
@@ -217,7 +224,7 @@ def main():
         logger.info("Initializing mixed precision done.")
 
     """Trains model and evaluates on relevant downstream tasks."""
-    start_epoch = load_checkpoint(cfg, model, optimizer)
+    start_epoch = load_checkpoint(cfg, model, optimizer) + 1
     cfg.TRAIN.MAX_ITERS = cfg.TRAIN.MAX_EPOCHS * len(train_loader)
     scheduler = construct_scheduler(optimizer, cfg)
 
@@ -225,7 +232,7 @@ def main():
         logger.info(
             f"Traning epoch {cur_epoch}/{cfg.TRAIN.MAX_EPOCHS}, {len(train_loader)} iters each epoch")
         train(cfg, train_loader, model, optimizer,
-              scheduler, algo, cur_epoch, summary_writer)
+              scheduler, algo, cur_epoch, summary_writer, val_loader, iterator_tasks)
         if (cur_epoch+1) % cfg.EVAL.VAL_INTERVAL == 0 or cur_epoch == cfg.TRAIN.MAX_EPOCHS-1:
             # val(cfg, val_loader, model, algo, cur_epoch, summary_writer)
             if cfg.DATASETS[0] == "finegym":
