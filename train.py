@@ -43,6 +43,16 @@ def train(cfg, train_loader, model, optimizer, scheduler, algo, cur_epoch, summa
         train_loader = tqdm(train_loader, total=len(train_loader))
     for cur_iter, (videos, _labels, seq_lens, chosen_steps, video_masks, names) in enumerate(train_loader):
         logger.info(f'cur_iter: {cur_iter}, name: {names[0]}')
+
+        if cur_iter % 2 == 0:
+            sync_offset_res = sync_offset.evaluate(
+                model, train_loader, val_loader, cur_epoch, summary_writer, sample=True)
+
+            wandb.log({
+                "abs_frame_error_mean_sampled": sync_offset_res['abs_frame_error_mean'],
+                "abs_frame_error_std_dev_sampled": sync_offset_res['abs_frame_error_std_dev']
+            })
+
         optimizer.zero_grad()
         if cfg.USE_AMP:
             torch.autograd.set_detect_anomaly(True)
@@ -103,14 +113,10 @@ def train(cfg, train_loader, model, optimizer, scheduler, algo, cur_epoch, summa
                 summary_writer.add_video(f'{names[0]}', unnorm(
                     visual_video[::cfg.DATA.NUM_CONTEXTS]).unsqueeze(0), 0, fps=4)
 
-            sync_offset_res = sync_offset.evaluate(
-                model, train_loader, val_loader, cur_epoch, summary_writer, sample=True)
+        wandb.log({
+            "loss": loss,
+        })
 
-            wandb.log({
-                "loss": loss.item(),
-                "abs_frame_error_mean_sampled": sync_offset_res['abs_frame_error_mean'],
-                "abs_frame_error_std_dev_sampled": sync_offset_res['abs_frame_error_std_dev']
-            })
         du.synchronize()
 
     summary_writer.add_scalar('train/learning_rate',

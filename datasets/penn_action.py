@@ -29,6 +29,8 @@ PENN_ACTION_LIST = [
     'tennis_serve'
 ]
 
+path_to_dataset = '/home/yosubs/koa_scratch/penn_action'
+
 
 class PennAction(torch.utils.data.Dataset):
     def __init__(self, cfg, split, dataset_name=None, mode="auto", sample_all=False):
@@ -42,7 +44,7 @@ class PennAction(torch.utils.data.Dataset):
         self.sample_all = sample_all
         self.num_contexts = cfg.DATA.NUM_CONTEXTS
 
-        with open(os.path.join(cfg.PATH_TO_DATASET, split+'.pkl'), 'rb') as f:
+        with open(os.path.join(path_to_dataset, split+'.pkl'), 'rb') as f:
             self.dataset, self.action_to_indices = pickle.load(f)
 
         if dataset_name is not None:
@@ -82,7 +84,7 @@ class PennAction(torch.utils.data.Dataset):
         frame_label = self.dataset[index]["frame_label"]
         seq_len = self.dataset[index]["seq_len"]
         video_file = os.path.join(
-            self.cfg.PATH_TO_DATASET, self.dataset[index]["video_file"])
+            path_to_dataset, self.dataset[index]["video_file"])
         video, _, info = read_video(video_file, pts_unit='sec')
         # T H W C -> T C H W, [0,1] tensor
         video = video.permute(0, 3, 1, 2).float() / 255.0
