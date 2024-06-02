@@ -11,7 +11,7 @@ import wandb
 
 logger = logging.get_logger(__name__)
 
-sample_rate = 0.02
+sample_rate = 0.05
 
 
 def softmax(w, t=1.0):

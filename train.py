@@ -44,7 +44,7 @@ def train(cfg, train_loader, model, optimizer, scheduler, algo, cur_epoch, summa
     for cur_iter, (videos, _labels, seq_lens, chosen_steps, video_masks, names) in enumerate(train_loader):
         logger.info(f'cur_iter: {cur_iter}, name: {names[0]}')
 
-        if cur_iter % 2 == 0:
+        if cur_iter % 100 == 0:
             sync_offset_res = sync_offset.evaluate(
                 model, train_loader, val_loader, cur_epoch, summary_writer, sample=True)
 
