@@ -49,8 +49,12 @@ def train(cfg, train_loader, model, optimizer, scheduler, algo, cur_epoch, summa
                 model, train_loader, val_loader, cur_epoch, summary_writer, sample=True)
 
             wandb.log({
-                "abs_frame_error_mean_sampled": sync_offset_res['abs_frame_error_mean'],
-                "abs_frame_error_std_dev_sampled": sync_offset_res['abs_frame_error_std_dev']
+                "median_abs_frame_error_sampled": sync_offset_res['median_abs_frame_error'],
+                "median_abs_frame_error_std_dev_sampled": sync_offset_res['median_abs_frame_error_std_dev'],
+                "median_abs_frame_error_moe_sampled": sync_offset_res['median_abs_frame_error_moe'],
+                "mean_abs_frame_error_sampled": sync_offset_res['mean_abs_frame_error'],
+                "mean_abs_frame_error_std_dev_sampled": sync_offset_res['mean_abs_frame_error_std_dev'],
+                "mean_abs_frame_error_moe_sampled": sync_offset_res['mean_abs_frame_error_moe'],
             })
 
         optimizer.zero_grad()

@@ -7,6 +7,7 @@ import utils.logging as logging
 from torch.nn import functional as Fun
 import math
 import wandb
+from scipy.stats import t
 
 
 logger = logging.get_logger(__name__)
@@ -29,7 +30,8 @@ class SyncOffset(object):
     def evaluate(self, model, train_loader, val_loader, cur_epoch, summary_writer, sample=False):
         model.eval()
 
-        abs_frame_errors = []
+        abs_frame_errors_median = []
+        abs_frame_errors_mean = []
         with torch.no_grad():
             count = 0
             for videos, labels, seq_lens, chosen_steps, video_masks, names in val_loader:
@@ -48,31 +50,47 @@ class SyncOffset(object):
                         model, video, labels[i], seq_len, chosen_step, video_mask, name)
                     embs.append(emb)
 
-                abs_frame_error = self.get_sync_offset(
+                abs_frame_error_dict = self.get_sync_offset(
                     embs[0], labels[0], embs[1], labels[1])
-                abs_frame_errors.append(abs_frame_error)
+
+                abs_frame_errors_median.append(
+                    abs_frame_error_dict['result_median'])
+                abs_frame_errors_mean.append(
+                    abs_frame_error_dict['result_mean'])
 
                 logger.info(
-                    f'names: {names}, labels: {labels}, abs_frame_error: {abs_frame_error}')
+                    f'names: {names}, labels: {labels}, abs_frame_error: {abs_frame_error_dict}')
                 count += 1
 
-        mean_abs_frame_error = np.mean(abs_frame_errors)
-        std_dev = np.std(abs_frame_errors)
+        median_abs_frame_error = np.mean(abs_frame_errors_median)
+        median_std_dev = np.std(abs_frame_errors_median)
+        median_moe = calculate_margin_of_error(abs_frame_errors_median)
+
+        mean_abs_frame_error = np.mean(abs_frame_errors_mean)
+        mean_std_dev = np.std(abs_frame_errors_mean)
+        mean_moe = calculate_margin_of_error(abs_frame_errors_mean)
 
         if not sample:
-            logger.info('epoch[{}/{}] mean abs frame error: {:.4f}'.format(
-                cur_epoch, self.cfg.TRAIN.MAX_EPOCHS, mean_abs_frame_error))
+            logger.info('epoch[{}/{}] mean of abs_frame_errors_median: {:.4f}'.format(
+                cur_epoch, self.cfg.TRAIN.MAX_EPOCHS, median_abs_frame_error))
             logger.info('epoch[{}/{}] std dev: {:.4f}'.format(
-                cur_epoch, self.cfg.TRAIN.MAX_EPOCHS, std_dev))
-            logger.info('epoch[{}/{}] len(abs_frame_errors): {}'.format(
-                cur_epoch, self.cfg.TRAIN.MAX_EPOCHS, len(abs_frame_errors)))
+                cur_epoch, self.cfg.TRAIN.MAX_EPOCHS, median_std_dev))
+            logger.info('epoch[{}/{}] len(abs_frame_errors_median): {}'.format(
+                cur_epoch, self.cfg.TRAIN.MAX_EPOCHS, len(abs_frame_errors_median)))
+            logger.info('epoch[{}/{}] moe(abs_frame_errors_median): {}'.format(
+                cur_epoch, self.cfg.TRAIN.MAX_EPOCHS, len(abs_frame_errors_median)))
 
-            wandb.log({"abs_frame_error_mean": mean_abs_frame_error,
-                       "abs_frame_error_std_dev": std_dev})
+            wandb.log({"median_abs_frame_error": median_abs_frame_error,
+                       "median_abs_frame_error_std_dev": median_std_dev,
+                       "median_abs_frame_error_moe": median_moe})
 
         return {
-            'abs_frame_error_mean': mean_abs_frame_error,
-            'abs_frame_error_std_dev': std_dev
+            'median_abs_frame_error': median_abs_frame_error,
+            'median_abs_frame_error_std_dev': median_std_dev,
+            "median_abs_frame_error_moe": median_moe,
+            'mean_abs_frame_error': mean_abs_frame_error,
+            'mean_abs_frame_error_std_dev': mean_std_dev,
+            "mean_abs_frame_error_moe": mean_moe
         }
 
     def get_sync_offset(self, embs0, label0, embs1, label1):
@@ -151,9 +169,48 @@ def decision_offset(view1, view2, label):
     logger.info(f'frames: {frames}')
 
     median_frames = np.median(frames)
+    mean_frames = np.average(frames)
 
-    num_frames = math.floor(median_frames)
+    num_frames_median = math.floor(median_frames)
+    num_frames_mean = math.floor(mean_frames)
 
-    result = abs(num_frames - label)
+    result_median = abs(num_frames_median - label)
+    result_mean = abs(num_frames_mean - label)
 
-    return result
+    return {
+        'result_median': result_median,
+        'result_mean': result_mean
+    }
+
+
+def calculate_margin_of_error(data, confidence_level=0.95):
+    """
+    Calculate the margin of error for the mean of a sample data using t-distribution.
+
+    Args:
+    data (list): list of sample data.
+    confidence_level (float): The confidence level (0 < confidence_level < 1).
+
+    Returns:
+    float: The margin of error for the mean of the sample data.
+    """
+    if not 0 < confidence_level < 1:
+        raise ValueError("Confidence level must be between 0 and 1")
+
+    # Calculate the sample mean and standard deviation
+    std_dev = np.std(data)
+    n = len(data)
+
+    # Calculate the degrees of freedom
+    df = n - 1
+
+    # Determine the critical t-value for the given confidence level
+    # We use two-tailed, hence (1 + confidence_level) / 2
+    alpha = (1 - confidence_level) / 2
+    t_critical = t.ppf(1 - alpha, df)
+
+    # Calculate the margin of error
+    margin_of_error = t_critical * \
+        (std_dev / math.sqrt(n))
+
+    return margin_of_error
