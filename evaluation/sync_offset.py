@@ -73,16 +73,29 @@ class SyncOffset(object):
         if not sample:
             logger.info('epoch[{}/{}] mean of abs_frame_errors_median: {:.4f}'.format(
                 cur_epoch, self.cfg.TRAIN.MAX_EPOCHS, median_abs_frame_error))
-            logger.info('epoch[{}/{}] std dev: {:.4f}'.format(
+            logger.info('epoch[{}/{}] std dev for abs_frame_errors_median: {:.4f}'.format(
                 cur_epoch, self.cfg.TRAIN.MAX_EPOCHS, median_std_dev))
-            logger.info('epoch[{}/{}] len(abs_frame_errors_median): {}'.format(
-                cur_epoch, self.cfg.TRAIN.MAX_EPOCHS, len(abs_frame_errors_median)))
             logger.info('epoch[{}/{}] moe(abs_frame_errors_median): {}'.format(
                 cur_epoch, self.cfg.TRAIN.MAX_EPOCHS, len(abs_frame_errors_median)))
+            logger.info('epoch[{}/{}] len(abs_frame_errors_median): {}'.format(
+                cur_epoch, self.cfg.TRAIN.MAX_EPOCHS, len(abs_frame_errors_median)))
+
+            logger.info('epoch[{}/{}] mean of abs_frame_errors_mean: {:.4f}'.format(
+                cur_epoch, self.cfg.TRAIN.MAX_EPOCHS, mean_abs_frame_error))
+            logger.info('epoch[{}/{}] std dev for abs_frame_errors_mean: {:.4f}'.format(
+                cur_epoch, self.cfg.TRAIN.MAX_EPOCHS, mean_std_dev))
+            logger.info('epoch[{}/{}] moe(abs_frame_errors_mean): {}'.format(
+                cur_epoch, self.cfg.TRAIN.MAX_EPOCHS, len(abs_frame_errors_mean)))
+            logger.info('epoch[{}/{}] len(abs_frame_errors_mean): {}'.format(
+                cur_epoch, self.cfg.TRAIN.MAX_EPOCHS, len(abs_frame_errors_mean)))
 
             wandb.log({"median_abs_frame_error": median_abs_frame_error,
                        "median_abs_frame_error_std_dev": median_std_dev,
-                       "median_abs_frame_error_moe": median_moe})
+                       "median_abs_frame_error_moe": median_moe,
+                       "mean_abs_frame_error": mean_abs_frame_error,
+                       "mean_abs_frame_error_std_dev": mean_std_dev,
+                       "mean_abs_frame_error_moe": mean_moe
+                       })
 
         return {
             'median_abs_frame_error': median_abs_frame_error,
