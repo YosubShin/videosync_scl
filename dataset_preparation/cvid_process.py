@@ -25,7 +25,8 @@ def main(split="train"):
         save_file = os.path.join(data_root, f"val.pkl")
 
     images_dir = os.path.join(data_root, "raw_images")
-    cvid_syn_dir = os.path.join(data_root, "CVID-SYN/pose")
+    cvid_syn_dir = os.path.join(
+        data_root, f"CVID-SYN/pose")
 
     labels = [{}, {}]
     event_ids = set()
@@ -35,6 +36,12 @@ def main(split="train"):
     for root, _, files in os.walk(cvid_syn_dir):
         for i, file in enumerate(files):
             if not file.endswith('.json'):
+                continue
+
+            # Let's arbitrarily choose odd class numbers as training and even class numbers as test set
+            class_num = int(file[4])
+            is_train_set = class_num in [1, 3, 5]
+            if (split == "train" and not is_train_set) or (split == "val" and is_train_set):
                 continue
 
             # Sample file name:
