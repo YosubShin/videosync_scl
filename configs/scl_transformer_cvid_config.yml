@@ -1,5 +1,5 @@
 SSL: true
-USE_AMP: true
+USE_AMP: false
 AUGMENTATION:
   STRENGTH: 1.0
   BRIGHTNESS: true

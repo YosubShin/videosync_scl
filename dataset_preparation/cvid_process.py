@@ -91,7 +91,7 @@ def main(split="train"):
                 if not os.path.exists(images_path):
                     continue
 
-                cmd = f'ffmpeg -hide_banner -loglevel panic -y -start_number {start_frame} -i {images_path}/%04d.jpg -strict -2 -frames:v 120 -vf "scale=640:360" {output_file}'
+                cmd = f'ffmpeg -hide_banner -loglevel panic -y -start_number {start_frame} -i {images_path}/%04d.jpg -strict -2 -frames:v 120 -vf "scale=224:224,setdar=1:1" {output_file}'
                 os.system(cmd)
 
             video = cv2.VideoCapture(output_file)
