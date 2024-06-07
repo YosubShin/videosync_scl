@@ -55,7 +55,8 @@ class Ntu(torch.utils.data.Dataset):
 
     def __getitem__(self, index):
         if self.cfg.SSL and self.mode == "train":
-            return self.get_training_item(index)
+            return self.get_supervised_training_item(index)
+            # return self.get_training_item(index)
 
         videos = []
         labels = []
@@ -131,6 +132,53 @@ class Ntu(torch.utils.data.Dataset):
         chosen_steps = torch.stack([chosen_step_0, chosen_step_1], dim=0)
         video_mask = torch.stack([video_mask0, video_mask1], dim=0)
         return videos, labels, seq_lens, chosen_steps, video_mask, names
+
+    def get_supervised_training_item(self, index):
+        videos = []
+        labels = []
+        seq_lens = []
+        chosen_steps = []
+        video_masks = []
+        names = []
+
+        steps_0 = None
+        for i, camera_id in enumerate(['001', '002']):
+            name = self.dataset[index][f"video_file_{i}"].split(
+                "/")[-1].split(".")[0]
+            video_file = os.path.join(
+                self.cfg.PATH_TO_DATASET, self.dataset[index][f"video_file_{i}"])
+            video, _, info = read_video(video_file, pts_unit='sec')
+            # T H W C -> T C H W, [0,1] tensor
+            video = video.permute(0, 3, 1, 2).float() / 255.0
+            seq_len = len(video)
+            frame_label = -1 * torch.ones(seq_len)
+
+            steps, chosen_step, video_mask = self.sample_frames(
+                seq_len, self.num_frames, pre_steps=steps_0)
+            view = self.data_preprocess(video[steps.long()])
+            label = frame_label[chosen_step.long()]
+
+            if i == 0:
+                steps_0 = steps.clone()
+
+            frame_offset_label = torch.full(
+                (1, ), self.dataset[index][f"label_{i}"], dtype=torch.int32).item()
+            if frame_offset_label != 0:
+                chosen_step = chosen_step + frame_offset_label
+
+            videos.append(view)
+            labels.append(label)
+            seq_lens.append(seq_len)
+            chosen_steps.append(chosen_step)
+            video_masks.append(video_mask)
+            names.append(name)
+
+        videos = torch.stack(videos, dim=0)
+        labels = torch.stack(labels, dim=0)
+        seq_lens = torch.tensor(seq_lens)
+        chosen_steps = torch.stack(chosen_steps, dim=0)
+        video_masks = torch.stack(video_masks, dim=0)
+        return videos, labels, seq_lens, chosen_steps, video_masks, names
 
     def sample_frames(self, seq_len, num_frames, pre_steps=None):
         # When dealing with very long videos we can choose to sub-sample to fit
