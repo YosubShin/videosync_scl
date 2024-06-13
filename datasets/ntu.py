@@ -141,6 +141,9 @@ class Ntu(torch.utils.data.Dataset):
         video_masks = []
         names = []
 
+        # Let's not random crop and make other transformations for supervised learning.
+        data_preprocess = create_data_augment(self.cfg, augment=False)
+
         steps_0 = None
         for i, camera_id in enumerate(['001', '002']):
             name = self.dataset[index][f"video_file_{i}"].split(
@@ -155,7 +158,7 @@ class Ntu(torch.utils.data.Dataset):
 
             steps, chosen_step, video_mask = self.sample_frames(
                 seq_len, self.num_frames, pre_steps=steps_0)
-            view = self.data_preprocess(video[steps.long()])
+            view = data_preprocess(video[steps.long()])
             label = frame_label[chosen_step.long()]
 
             if i == 0:
