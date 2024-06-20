@@ -10,6 +10,9 @@ import random
 from tqdm import tqdm
 import numpy as np
 from torch.utils.tensorboard import SummaryWriter
+import torch.autograd.profiler as profiler
+import signal
+import threading
 
 import utils.distributed as du
 import utils.logging as logging
@@ -21,6 +24,26 @@ from algos import get_algo
 from evaluation import get_tasks
 
 logger = logging.get_logger(__name__)
+
+
+prof = None
+profiler_output_path = None
+
+
+def signal_handler(sig, frame):
+    global prof, profiler_output_path
+
+    if prof is None:
+        return
+
+    print('Signal received, exporting profiler data...')
+    prof.export_chrome_trace(profiler_output_path)
+    sys.exit(0)
+
+
+# Register signal handler
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
 
 
 def train(cfg, train_loader, model, optimizer, scheduler, algo, cur_epoch, summary_writer, val_loader, iterator_tasks):
@@ -47,6 +70,7 @@ def train(cfg, train_loader, model, optimizer, scheduler, algo, cur_epoch, summa
         if cur_iter % 100 == 0:
             sync_offset_res = sync_offset.evaluate(
                 model, train_loader, val_loader, cur_epoch, summary_writer, sample=True)
+            logger.info('done running sync_offset.evaluate()')
 
             wandb.log({
                 "median_abs_frame_error_sampled": sync_offset_res['median_abs_frame_error'],
@@ -57,6 +81,12 @@ def train(cfg, train_loader, model, optimizer, scheduler, algo, cur_epoch, summa
                 "mean_abs_frame_error_moe_sampled": sync_offset_res['mean_abs_frame_error_moe'],
             })
 
+        if cur_epoch == 32 and cur_iter == 0:
+            logger.info('turning on profiling')
+            prof = profiler.profile(use_cuda=True)
+            prof.__enter__()
+
+        logger.info('train.py: 61')
         optimizer.zero_grad()
         if cfg.USE_AMP:
             torch.autograd.set_detect_anomaly(True)
@@ -81,6 +111,7 @@ def train(cfg, train_loader, model, optimizer, scheduler, algo, cur_epoch, summa
             # Updates the scale for next iteration.
             scaler.update()
         else:
+            logger.info('train.py: 86')
             torch.autograd.set_detect_anomaly(True)
             if cfg.TRAINING_ALGO == 'classification':
                 loss_dict = algo.compute_loss(
@@ -88,22 +119,54 @@ def train(cfg, train_loader, model, optimizer, scheduler, algo, cur_epoch, summa
             else:
                 loss_dict = algo.compute_loss(
                     model, videos, seq_lens, chosen_steps, video_masks)
+            logger.info('train.py: 94')
             loss = loss_dict["loss"]
-            # Perform the backward pass.
-            loss.backward()
+
+            def target():
+                # Perform the backward pass.
+                loss.backward()
+
+            # Timeout after 60 seconds
+            thread = threading.Thread(target=target)
+            thread.start()
+            thread.join(60)
+            if thread.is_alive():
+                logger.error(f'backward pass timed out. cur_epoch: {cur_epoch}, cur_iter: {cur_iter}, name: {names[0]}')
+
+                if cur_epoch == 32 and cur_iter == 0:
+                    logger.info('turning off profiling')
+                    prof.__exit__(None, None, None)
+                    prof.export_chrome_trace(profiler_output_path)
+                
+                if prof is None:
+                    sys.exit(0)
+                print('Signal received, exporting profiler data...')
+                prof.export_chrome_trace(profiler_output_path)
+                sys.exit(0)
+
+            logger.info('train.py: 98')
             # Update the parameters.
             if cfg.OPTIMIZER.GRAD_CLIP > 0:
                 torch.nn.utils.clip_grad_norm_(
                     model.parameters(), cfg.OPTIMIZER.GRAD_CLIP)
+            logger.info('train.py: 103')
             optimizer.step()
+            logger.info('train.py: 105')
 
         for key in loss_dict:
+            logger.info(f'train.py: 108 key: {key}')
             loss_dict[key][torch.isnan(loss_dict[key])] = 0
             if key not in total_loss:
                 total_loss[key] = 0
             total_loss[key] += du.all_reduce([loss_dict[key]]
                                              )[0].item() / data_size
 
+        if cur_epoch == 32 and cur_iter == 0:
+            logger.info('turning off profiling')
+            prof.__exit__(None, None, None)
+            prof.export_chrome_trace(profiler_output_path)
+
+        logger.info('train.py: 115')
         if du.is_root_proc() and cur_iter % cfg.LOGGING.REPORT_INTERVAL == 0:
             print(names)
             logger.info(
@@ -117,11 +180,13 @@ def train(cfg, train_loader, model, optimizer, scheduler, algo, cur_epoch, summa
                 summary_writer.add_video(f'{names[0]}', unnorm(
                     visual_video[::cfg.DATA.NUM_CONTEXTS]).unsqueeze(0), 0, fps=4)
 
+        logger.info('train.py: 129')
         wandb.log({
             "loss": loss,
         })
 
         du.synchronize()
+        logger.info('train.py: 135')
 
     summary_writer.add_scalar('train/learning_rate',
                               get_lr(optimizer)[0], cur_epoch)
@@ -182,6 +247,8 @@ def val(cfg, val_loader, model, algo, cur_epoch, summary_writer):
 
 
 def main():
+    global profiler_output_path
+
     args = parse_args()
     cfg = load_config(args)
     setup_train_dir(cfg, cfg.LOGDIR, args.continue_train)
@@ -196,6 +263,8 @@ def main():
         args.rank = args.node_rank * torch.cuda.device_count() + args.local_rank
     logger.info(f'Node info: rank {args.rank} of world size {args.world_size}')
     cfg.args = args
+
+    profiler_output_path = f'/home/yosubs/koa_scratch/profiler_log_{args.local_rank}.json'
 
     torch.distributed.init_process_group(backend='nccl', init_method='env://')
 
@@ -221,6 +290,14 @@ def main():
     model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.local_rank],
                                                       output_device=args.local_rank, find_unused_parameters=True)
 
+    def check_gradients(module):
+        for name, param in module.named_parameters():
+            if param.grad is not None and torch.isnan(param.grad).any():
+                logger.warn(f"NaN gradient in {name}")
+
+    model.register_backward_hook(
+        lambda module, grad_input, grad_output: check_gradients(model))
+
     optimizer = construct_optimizer(model, cfg)
     algo = get_algo(cfg)
 
@@ -241,8 +318,9 @@ def main():
     for cur_epoch in range(start_epoch, cfg.TRAIN.MAX_EPOCHS):
         logger.info(
             f"Traning epoch {cur_epoch}/{cfg.TRAIN.MAX_EPOCHS}, {len(train_loader)} iters each epoch")
-        train(cfg, train_loader, model, optimizer,
-              scheduler, algo, cur_epoch, summary_writer, val_loader, iterator_tasks)
+        train(cfg, train_loader, model, optimizer, scheduler, algo,
+              cur_epoch, summary_writer, val_loader, iterator_tasks)
+        logger.info(f'done training cur_epoch: {cur_epoch}')
         if (cur_epoch+1) % cfg.EVAL.VAL_INTERVAL == 0 or cur_epoch == cfg.TRAIN.MAX_EPOCHS-1:
             # val(cfg, val_loader, model, algo, cur_epoch, summary_writer)
             if cfg.DATASETS[0] == "finegym":
@@ -251,11 +329,17 @@ def main():
                               iterator_tasks, embedding_tasks, cur_epoch, summary_writer)
             elif du.is_root_proc():
                 from evaluate import evaluate_once
+                logger.info(f'in root_proc, running evaluate_once')
                 evaluate_once(cfg, model, train_loader, val_loader, train_emb_loader, val_emb_loader,
                               iterator_tasks, embedding_tasks, cur_epoch, summary_writer)
+                logger.info(f'in root_proc, done running evaluate_once')
         if du.is_root_proc() and ((cur_epoch+1) % cfg.CHECKPOINT.SAVE_INTERVAL == 0 or cur_epoch == cfg.TRAIN.MAX_EPOCHS-1):
+            logger.info('in root_proc, running save_checkpoint')
             save_checkpoint(cfg, model, optimizer, cur_epoch)
+            logger.info('in root_proc, done running save_checkpoint')
+        logger.info('running du.synchronize')
         du.synchronize()
+        logger.info('done running du.synchronize')
 
     torch.distributed.destroy_process_group()
 

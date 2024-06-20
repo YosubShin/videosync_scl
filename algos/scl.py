@@ -12,7 +12,7 @@ import math
 
 import utils.logging as logging
 logger = logging.get_logger(__name__)
-
+logger.disabled = True
 
 def safe_div(a, b):
     out = a / b

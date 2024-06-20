@@ -8,6 +8,8 @@ import utils.logging as logging
 from models.resnet_c2d import *
 
 logger = logging.get_logger(__name__)
+logger.disabled = True
+
 
 def attention(Q, K, V, mask=None, dropout=None, visual=False):
     # Q, K, V are (B, *(H), seq_len, d_model//H = d_k)

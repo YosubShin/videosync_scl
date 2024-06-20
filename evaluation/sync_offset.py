@@ -8,9 +8,11 @@ from torch.nn import functional as Fun
 import math
 import wandb
 from scipy.stats import t
-
+from logging import INFO
 
 logger = logging.get_logger(__name__)
+logger.disabled = True
+logger.setLevel(INFO)
 
 sample_rate = 0.05
 
@@ -110,7 +112,7 @@ class SyncOffset(object):
         return decision_offset(torch.tensor(embs0).cuda(), torch.tensor(embs1).cuda(), label0 - label1)
 
     def get_embs(self, model, video, frame_label, seq_len, chosen_steps, video_masks, name):
-        logger.info(
+        logger.debug(
             f'name: {name}, video.shape: {video.shape}, seq_len: {seq_len}')
 
         assert video.size(0) == 1  # batch_size==1
@@ -150,22 +152,22 @@ def get_similarity(view1, view2):
 
 
 def decision_offset(view1, view2, label):
-    logger.info(f'view1.shape: {view1.shape}')
-    logger.info(f'view2.shape: {view2.shape}')
+    logger.debug(f'view1.shape: {view1.shape}')
+    logger.debug(f'view2.shape: {view2.shape}')
 
     sim_12 = get_similarity(view1, view2)
 
     softmaxed_sim_12 = Fun.softmax(sim_12, dim=1)
 
-    logger.info(f'softmaxed_sim_12.shape: {softmaxed_sim_12.shape}')
-    logger.info(f'softmaxed_sim_12: {softmaxed_sim_12}')
+    logger.debug(f'softmaxed_sim_12.shape: {softmaxed_sim_12.shape}')
+    logger.debug(f'softmaxed_sim_12: {softmaxed_sim_12}')
 
     ground = (torch.tensor(
         [i * 1.0 for i in range(view1.size(0))]).cuda()).reshape(-1, 1)
 
     predict = softmaxed_sim_12.argmax(dim=1)
 
-    logger.info(f'predict: {predict}')
+    logger.debug(f'predict: {predict}')
 
     length1 = ground.size(0)
 
@@ -178,8 +180,8 @@ def decision_offset(view1, view2, label):
         frame_error = (p - g)
         frames.append(frame_error)
 
-    logger.info(f'len(frames): {len(frames)}')
-    logger.info(f'frames: {frames}')
+    logger.debug(f'len(frames): {len(frames)}')
+    logger.debug(f'frames: {frames}')
 
     median_frames = np.median(frames)
     mean_frames = np.average(frames)
