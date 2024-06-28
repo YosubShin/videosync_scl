@@ -65,7 +65,7 @@ def main(split="train"):
                 frame_offset = labels[j][event_id]
                 frame_select_filter = '' if frame_offset == 0 else f'select=gte(n\,{str(frame_offset)}),setpts=PTS-STARTPTS,'
 
-                cmd = f'ffmpeg -hide_banner -loglevel panic -y -i {video_file} -strict -2 -vf "{frame_select_filter}scale=224:224,setdar=1:1" {output_file}'
+                cmd = f'ffmpeg -hide_banner -loglevel panic -y -i {video_file} -strict -2 -vf "{frame_select_filter}scale=224:224,setdar=1:1" -r 30 {output_file}'
                 os.system(cmd)
 
             video = cv2.VideoCapture(output_file)
