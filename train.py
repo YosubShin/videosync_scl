@@ -22,9 +22,10 @@ from utils.optimizer import construct_optimizer, construct_scheduler, get_lr
 from datasets import construct_dataloader, unnorm
 from algos import get_algo
 from evaluation import get_tasks
+from logging import INFO
 
 logger = logging.get_logger(__name__)
-
+logger.setLevel(INFO)
 
 prof = None
 profiler_output_path = None
@@ -47,6 +48,8 @@ signal.signal(signal.SIGTERM, signal_handler)
 
 
 def train(cfg, train_loader, model, optimizer, scheduler, algo, cur_epoch, summary_writer, val_loader, iterator_tasks):
+    global prof
+
     model.train()
     optimizer.zero_grad()
     data_size = len(train_loader)
@@ -59,17 +62,19 @@ def train(cfg, train_loader, model, optimizer, scheduler, algo, cur_epoch, summa
         logger.info(f"update the training batch sampler to epoch {cur_epoch}")
     total_loss = {}
 
+    logger.info(f'epoch: {cur_epoch}, LR: {get_lr(optimizer)}')
+
     from evaluation.sync_offset import SyncOffset
     sync_offset = SyncOffset(cfg)
 
     if du.is_root_proc():
         train_loader = tqdm(train_loader, total=len(train_loader))
     for cur_iter, (videos, _labels, seq_lens, chosen_steps, video_masks, names) in enumerate(train_loader):
-        logger.info(f'cur_iter: {cur_iter}, name: {names[0]}')
+        logger.debug(f'cur_iter: {cur_iter}, name: {names[0]}')
 
-        if cur_iter % 100 == 0:
+        if du.is_root_proc() and cur_iter % 100 == 0:
             sync_offset_res = sync_offset.evaluate(
-                model, train_loader, val_loader, cur_epoch, summary_writer, sample=True)
+                model, train_loader, val_loader, cur_epoch, summary_writer, sample=True, cur_iter=cur_iter)
             logger.info('done running sync_offset.evaluate()')
 
             wandb.log({
@@ -81,12 +86,13 @@ def train(cfg, train_loader, model, optimizer, scheduler, algo, cur_epoch, summa
                 "mean_abs_frame_error_moe_sampled": sync_offset_res['mean_abs_frame_error_moe'],
             })
 
+            model.train()
+
         if cur_epoch == 32 and cur_iter == 0:
             logger.info('turning on profiling')
             prof = profiler.profile(use_cuda=True)
             prof.__enter__()
 
-        logger.info('train.py: 61')
         optimizer.zero_grad()
         if cfg.USE_AMP:
             torch.autograd.set_detect_anomaly(True)
@@ -111,7 +117,6 @@ def train(cfg, train_loader, model, optimizer, scheduler, algo, cur_epoch, summa
             # Updates the scale for next iteration.
             scaler.update()
         else:
-            logger.info('train.py: 86')
             torch.autograd.set_detect_anomaly(True)
             if cfg.TRAINING_ALGO == 'classification':
                 loss_dict = algo.compute_loss(
@@ -119,7 +124,6 @@ def train(cfg, train_loader, model, optimizer, scheduler, algo, cur_epoch, summa
             else:
                 loss_dict = algo.compute_loss(
                     model, videos, seq_lens, chosen_steps, video_masks)
-            logger.info('train.py: 94')
             loss = loss_dict["loss"]
 
             def target():
@@ -131,30 +135,27 @@ def train(cfg, train_loader, model, optimizer, scheduler, algo, cur_epoch, summa
             thread.start()
             thread.join(60)
             if thread.is_alive():
-                logger.error(f'backward pass timed out. cur_epoch: {cur_epoch}, cur_iter: {cur_iter}, name: {names[0]}')
+                logger.error(
+                    f'backward pass timed out. cur_epoch: {cur_epoch}, cur_iter: {cur_iter}, name: {names[0]}')
 
                 if cur_epoch == 32 and cur_iter == 0:
                     logger.info('turning off profiling')
                     prof.__exit__(None, None, None)
                     prof.export_chrome_trace(profiler_output_path)
-                
+
                 if prof is None:
                     sys.exit(0)
                 print('Signal received, exporting profiler data...')
                 prof.export_chrome_trace(profiler_output_path)
                 sys.exit(0)
 
-            logger.info('train.py: 98')
             # Update the parameters.
             if cfg.OPTIMIZER.GRAD_CLIP > 0:
                 torch.nn.utils.clip_grad_norm_(
                     model.parameters(), cfg.OPTIMIZER.GRAD_CLIP)
-            logger.info('train.py: 103')
             optimizer.step()
-            logger.info('train.py: 105')
 
         for key in loss_dict:
-            logger.info(f'train.py: 108 key: {key}')
             loss_dict[key][torch.isnan(loss_dict[key])] = 0
             if key not in total_loss:
                 total_loss[key] = 0
@@ -166,7 +167,6 @@ def train(cfg, train_loader, model, optimizer, scheduler, algo, cur_epoch, summa
             prof.__exit__(None, None, None)
             prof.export_chrome_trace(profiler_output_path)
 
-        logger.info('train.py: 115')
         if du.is_root_proc() and cur_iter % cfg.LOGGING.REPORT_INTERVAL == 0:
             print(names)
             logger.info(
@@ -180,13 +180,11 @@ def train(cfg, train_loader, model, optimizer, scheduler, algo, cur_epoch, summa
                 summary_writer.add_video(f'{names[0]}', unnorm(
                     visual_video[::cfg.DATA.NUM_CONTEXTS]).unsqueeze(0), 0, fps=4)
 
-        logger.info('train.py: 129')
         wandb.log({
             "loss": loss,
         })
 
         du.synchronize()
-        logger.info('train.py: 135')
 
     summary_writer.add_scalar('train/learning_rate',
                               get_lr(optimizer)[0], cur_epoch)
