@@ -9,12 +9,18 @@ import math
 import wandb
 from scipy.stats import t
 from logging import INFO
+import matplotlib.pyplot as plt
+import seaborn as sns
+import os
+from datetime import datetime
+import csv
+
 
 logger = logging.get_logger(__name__)
-logger.disabled = True
+# logger.disabled = True
 logger.setLevel(INFO)
 
-sample_rate = 0.05
+sample_rate = 0.01
 
 
 def softmax(w, t=1.0):
@@ -28,12 +34,25 @@ class SyncOffset(object):
     def __init__(self, cfg):
         self.cfg = cfg
         self.downstream_task = False
+        self.now_str = None
+        self.cur_epoch = None
+        self.cur_iter = None
 
-    def evaluate(self, model, train_loader, val_loader, cur_epoch, summary_writer, sample=False):
+    def evaluate(self, model, train_loader, val_loader, cur_epoch, summary_writer, sample=False, cur_iter=None):
         model.eval()
+
+        now = datetime.now()
+        self.now_str = now.strftime("%Y-%m-%d_%H_%M_%S")
+        self.cur_epoch = cur_epoch
+        self.cur_iter = cur_iter
 
         abs_frame_errors_median = []
         abs_frame_errors_mean = []
+        frame_errors_median = []
+        frame_errors_mean = []
+
+        csv_data = []
+
         with torch.no_grad():
             count = 0
             for videos, labels, seq_lens, chosen_steps, video_masks, names in val_loader:
@@ -53,15 +72,22 @@ class SyncOffset(object):
                     embs.append(emb)
 
                 abs_frame_error_dict = self.get_sync_offset(
-                    embs[0], labels[0], embs[1], labels[1])
+                    embs[0], labels[0], embs[1], labels[1], names[0][0], names[1][0])
 
                 abs_frame_errors_median.append(
-                    abs_frame_error_dict['result_median'])
+                    abs_frame_error_dict['abs_median'])
                 abs_frame_errors_mean.append(
-                    abs_frame_error_dict['result_mean'])
+                    abs_frame_error_dict['abs_mean'])
+                frame_errors_median.append(
+                    abs_frame_error_dict['err_median'])
+                frame_errors_mean.append(
+                    abs_frame_error_dict['err_mean'])
 
-                logger.info(
-                    f'names: {names}, labels: {labels}, abs_frame_error: {abs_frame_error_dict}')
+                csv_data.append([names[0][0], labels[0][0].item(), names[1][0], labels[1][0].item(),
+                                abs_frame_error_dict['abs_median'].item(
+                ), abs_frame_error_dict['abs_mean'].item(),
+                    abs_frame_error_dict['err_median'].item(), abs_frame_error_dict['err_mean'].item()])
+
                 count += 1
 
         median_abs_frame_error = np.mean(abs_frame_errors_median)
@@ -99,6 +125,19 @@ class SyncOffset(object):
                        "mean_abs_frame_error_moe": mean_moe
                        })
 
+        # Write CSV data to file
+        csv_filename = f'evaluation_results_epoch_{cur_epoch}_iter_{self.cur_iter}_{self.now_str}.csv'
+        csv_filepath = os.path.join(
+            self.cfg.LOGDIR, 'eval_logs', csv_filename)
+
+        with open(csv_filepath, mode='w', newline='') as file:
+            writer = csv.writer(file)
+            # Write header
+            writer.writerow(['Video 0', 'Label 0', 'Video 1',
+                            'Label 1', 'abs_median_error', 'abs_mean_error', 'median_error', 'mean_error'])
+            # Write data rows
+            writer.writerows(csv_data)
+
         return {
             'median_abs_frame_error': median_abs_frame_error,
             'median_abs_frame_error_std_dev': median_std_dev,
@@ -108,8 +147,8 @@ class SyncOffset(object):
             "mean_abs_frame_error_moe": mean_moe
         }
 
-    def get_sync_offset(self, embs0, label0, embs1, label1):
-        return decision_offset(torch.tensor(embs0).cuda(), torch.tensor(embs1).cuda(), label0 - label1)
+    def get_sync_offset(self, embs0, label0, embs1, label1, name0, name1):
+        return decision_offset(self.cfg, torch.tensor(embs0).cuda(), torch.tensor(embs1).cuda(), label0 - label1, name0, name1, self.now_str, self.cur_epoch, self.cur_iter)
 
     def get_embs(self, model, video, frame_label, seq_len, chosen_steps, video_masks, name):
         logger.debug(
@@ -151,12 +190,11 @@ def get_similarity(view1, view2):
     return similarity
 
 
-def decision_offset(view1, view2, label):
+def decision_offset(cfg, view1, view2, label, name0, name1, now_str, cur_epoch, cur_iter):
     logger.debug(f'view1.shape: {view1.shape}')
     logger.debug(f'view2.shape: {view2.shape}')
 
     sim_12 = get_similarity(view1, view2)
-
     softmaxed_sim_12 = Fun.softmax(sim_12, dim=1)
 
     logger.debug(f'softmaxed_sim_12.shape: {softmaxed_sim_12.shape}')
@@ -166,6 +204,32 @@ def decision_offset(view1, view2, label):
         [i * 1.0 for i in range(view1.size(0))]).cuda()).reshape(-1, 1)
 
     predict = softmaxed_sim_12.argmax(dim=1)
+
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(softmaxed_sim_12.cpu().numpy(),
+                annot=False, cmap="viridis", cbar=True, square=True)
+    plt.plot(predict.cpu(), np.arange(len(predict.cpu())), color='red',
+             marker='o', linestyle='-', linewidth=2, markersize=5)
+
+    k = label.item() * -1
+    # Create the points for the line with y-intercept k
+    x_line = np.arange(softmaxed_sim_12.shape[1])
+    y_line = x_line + k
+
+    valid_indices = (y_line >= 0) & (y_line < softmaxed_sim_12.shape[0])
+    x_line = x_line[valid_indices]
+    y_line = y_line[valid_indices]
+
+    plt.plot(x_line, y_line, color='blue', linestyle='--',
+             linewidth=2, label=f'Line with y-intercept {k}')
+
+    plt.gca().set_aspect('equal', adjustable='box')
+
+    # Save the heatmap to a PNG file
+    plt.title(f"softmaxed_sim_12_{name0}_{name1}")
+    plt.savefig(os.path.join(
+        cfg.LOGDIR, 'eval_logs', f"{name0}_{name1}_softmaxed_sim_12_epoch_{cur_epoch}_iter_{cur_iter}_{now_str}.png"))
+    plt.close()
 
     logger.debug(f'predict: {predict}')
 
@@ -189,12 +253,17 @@ def decision_offset(view1, view2, label):
     num_frames_median = math.floor(median_frames)
     num_frames_mean = math.floor(mean_frames)
 
-    result_median = abs(num_frames_median - label)
-    result_mean = abs(num_frames_mean - label)
+    abs_median = abs(num_frames_median - label)
+    abs_mean = abs(num_frames_mean - label)
+
+    logger.info(
+        f'name0: {name0}, name1: {name1}, abs_frame_error (median): {abs_median}, abs_frame_error (mean): {abs_mean}, frame_error (median): {num_frames_median - label}, frame_error (mean): {num_frames_mean - label}')
 
     return {
-        'result_median': result_median,
-        'result_mean': result_mean
+        'abs_median': abs_median,
+        'abs_mean': abs_mean,
+        'err_median': num_frames_median - label,
+        'err_mean': num_frames_mean - label,
     }
 
 
