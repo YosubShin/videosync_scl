@@ -12,7 +12,9 @@ from torchvision.io import read_video
 import utils.logging as logging
 from datasets.data_augment import create_data_augment, create_ssl_data_augment
 
+from logging import INFO
 logger = logging.get_logger(__name__)
+logger.setLevel(INFO)
 
 
 class Ntu(torch.utils.data.Dataset):
@@ -55,8 +57,8 @@ class Ntu(torch.utils.data.Dataset):
 
     def __getitem__(self, index):
         if self.cfg.SSL and self.mode == "train":
-            return self.get_supervised_training_item(index)
-            # return self.get_training_item(index)
+            # return self.get_supervised_training_item(index)
+            return self.get_training_item(index)
 
         videos = []
         labels = []
@@ -117,7 +119,7 @@ class Ntu(torch.utils.data.Dataset):
         steps_0, chosen_step_0, video_mask0 = self.sample_frames(
             seq_len, self.num_frames)
 
-        logger.info(
+        logger.debug(
             f'name: {name}, video[steps_0.long()].shape: {video[steps_0.long()].shape}, video[steps_0.long()].dtype: {video[steps_0.long()].dtype}')
 
         view_0 = self.data_preprocess(video[steps_0.long()])
