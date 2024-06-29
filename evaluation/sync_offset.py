@@ -37,6 +37,7 @@ class SyncOffset(object):
         self.now_str = None
         self.cur_epoch = None
         self.cur_iter = None
+        self.sample = None
 
     def evaluate(self, model, train_loader, val_loader, cur_epoch, summary_writer, sample=False, cur_iter=None):
         model.eval()
@@ -45,6 +46,7 @@ class SyncOffset(object):
         self.now_str = now.strftime("%Y-%m-%d_%H_%M_%S")
         self.cur_epoch = cur_epoch
         self.cur_iter = cur_iter
+        self.sample = sample
 
         abs_frame_errors_median = []
         abs_frame_errors_mean = []
@@ -148,7 +150,7 @@ class SyncOffset(object):
         }
 
     def get_sync_offset(self, embs0, label0, embs1, label1, name0, name1):
-        return decision_offset(self.cfg, torch.tensor(embs0).cuda(), torch.tensor(embs1).cuda(), label0 - label1, name0, name1, self.now_str, self.cur_epoch, self.cur_iter)
+        return decision_offset(self.cfg, torch.tensor(embs0).cuda(), torch.tensor(embs1).cuda(), label0 - label1, name0, name1, self.now_str, self.cur_epoch, self.cur_iter, self.sample)
 
     def get_embs(self, model, video, frame_label, seq_len, chosen_steps, video_masks, name):
         logger.debug(
@@ -190,7 +192,7 @@ def get_similarity(view1, view2):
     return similarity
 
 
-def decision_offset(cfg, view1, view2, label, name0, name1, now_str, cur_epoch, cur_iter):
+def decision_offset(cfg, view1, view2, label, name0, name1, now_str, cur_epoch, cur_iter, sample):
     logger.debug(f'view1.shape: {view1.shape}')
     logger.debug(f'view2.shape: {view2.shape}')
 
@@ -205,31 +207,34 @@ def decision_offset(cfg, view1, view2, label, name0, name1, now_str, cur_epoch, 
 
     predict = softmaxed_sim_12.argmax(dim=1)
 
-    plt.figure(figsize=(10, 8))
-    sns.heatmap(softmaxed_sim_12.cpu().numpy(),
-                annot=False, cmap="viridis", cbar=True, square=True)
-    plt.plot(predict.cpu(), np.arange(len(predict.cpu())), color='red',
-             marker='o', linestyle='-', linewidth=2, markersize=5)
+    # Only plot if we are sampling
+    if sample:
+        plt.figure(figsize=(10, 8))
+        sns.heatmap(softmaxed_sim_12.cpu().numpy(),
+                    annot=False, cmap="viridis", cbar=True, square=True)
+        plt.plot(predict.cpu(), np.arange(len(predict.cpu())), color='red',
+                 marker='o', linestyle='-', linewidth=2, markersize=5)
 
-    k = label.item() * -1
-    # Create the points for the line with y-intercept k
-    x_line = np.arange(softmaxed_sim_12.shape[1])
-    y_line = x_line + k
+        k = label.item() * -1
+        # Create the points for the line with y-intercept k
+        x_line = np.arange(softmaxed_sim_12.shape[1])
+        y_line = x_line + k
 
-    valid_indices = (y_line >= 0) & (y_line < softmaxed_sim_12.shape[0])
-    x_line = x_line[valid_indices]
-    y_line = y_line[valid_indices]
+        valid_indices = (y_line >= 0) & (y_line < softmaxed_sim_12.shape[0])
+        x_line = x_line[valid_indices]
+        y_line = y_line[valid_indices]
 
-    plt.plot(x_line, y_line, color='blue', linestyle='--',
-             linewidth=2, label=f'Line with y-intercept {k}')
+        plt.plot(x_line, y_line, color='blue', linestyle='--',
+                 linewidth=2, label=f'Line with y-intercept {k}')
 
-    plt.gca().set_aspect('equal', adjustable='box')
+        plt.gca().set_aspect('equal', adjustable='box')
 
-    # Save the heatmap to a PNG file
-    plt.title(f"softmaxed_sim_12_{name0}_{name1}")
-    plt.savefig(os.path.join(
-        cfg.LOGDIR, 'eval_logs', f"{name0}_{name1}_softmaxed_sim_12_epoch_{cur_epoch}_iter_{cur_iter}_{now_str}.png"))
-    plt.close()
+        # Save the heatmap to a PNG file
+        plt.title(
+            f"{name0}_{name1}_softmaxed_sim_12_epoch_{cur_epoch}_iter_{cur_iter}")
+        plt.savefig(os.path.join(
+            cfg.LOGDIR, 'eval_logs', f"{name0}_{name1}_softmaxed_sim_12_epoch_{cur_epoch}_iter_{cur_iter}_{now_str}.png"))
+        plt.close()
 
     logger.debug(f'predict: {predict}')
 
