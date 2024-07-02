@@ -330,6 +330,7 @@ def main():
                 logger.info(f'in root_proc, running evaluate_once')
                 evaluate_once(cfg, model, train_loader, val_loader, train_emb_loader, val_emb_loader,
                               iterator_tasks, embedding_tasks, cur_epoch, summary_writer)
+                model.train()
                 logger.info(f'in root_proc, done running evaluate_once')
         if du.is_root_proc() and ((cur_epoch+1) % cfg.CHECKPOINT.SAVE_INTERVAL == 0 or cur_epoch == cfg.TRAIN.MAX_EPOCHS-1):
             logger.info('in root_proc, running save_checkpoint')
