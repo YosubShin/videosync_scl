@@ -68,13 +68,20 @@ def construct_dataloader(cfg, split, mode="auto"):
                                                        num_workers=cfg.DATA.NUM_WORKERS, pin_memory=True, sampler=train_sampler,
                                                        drop_last=True)
             cfg.DATASETS = cfg.DATASETS[1:]
-            from datasets.penn_action import PennAction
-            train_eval_loader = []
-            for dataset_name in cfg.DATASETS:
-                train_eval_dataset = PennAction(
-                    cfg, split, dataset_name, mode="eval", sample_all=True)
-                train_eval_loader.append(torch.utils.data.DataLoader(train_eval_dataset, batch_size=1, shuffle=False,
-                                                                     num_workers=0, pin_memory=True, sampler=None))
+            # from datasets.penn_action import PennAction
+            # train_eval_loader = []
+            # for dataset_name in cfg.DATASETS:
+            #     train_eval_dataset = PennAction(
+            #         cfg, split, dataset_name, mode="eval", sample_all=True)
+            #     train_eval_loader.append(torch.utils.data.DataLoader(train_eval_dataset, batch_size=1, shuffle=False,
+            #                                                          num_workers=0, pin_memory=True, sampler=None))
+
+            train_eval_dataset = Ntu(
+                cfg, split, mode="eval", sample_all=True)
+            train_eval_sampler = torch.utils.data.distributed.DistributedSampler(
+                train_eval_dataset) if cfg.NUM_GPUS > 1 else None
+            train_eval_loader = [torch.utils.data.DataLoader(train_eval_dataset, batch_size=1, shuffle=False,
+                                                             num_workers=cfg.DATA.NUM_WORKERS, pin_memory=True, sampler=train_eval_sampler)]
         else:
             from datasets.penn_action import PennAction, ActionBatchSampler
             train_dataset = PennAction(cfg, split, mode="train")

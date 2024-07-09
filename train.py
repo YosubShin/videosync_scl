@@ -10,6 +10,7 @@ import random
 from tqdm import tqdm
 import numpy as np
 from torch.utils.tensorboard import SummaryWriter
+from torch.distributed.elastic.multiprocessing.errors import record
 import torch.autograd.profiler as profiler
 import signal
 import threading
@@ -22,10 +23,8 @@ from utils.optimizer import construct_optimizer, construct_scheduler, get_lr
 from datasets import construct_dataloader, unnorm
 from algos import get_algo
 from evaluation import get_tasks
-from logging import INFO
 
 logger = logging.get_logger(__name__)
-logger.setLevel(INFO)
 
 prof = None
 profiler_output_path = None
@@ -106,7 +105,8 @@ def train(cfg, train_loader, model, optimizer, scheduler, algo, cur_epoch, summa
                         model, videos, seq_lens, chosen_steps, video_masks)
             loss = loss_dict["loss"]
 
-            logger.info(f'cur_iter: {cur_iter}, loss_dict: {loss_dict}')
+            logger.info(
+                f'cur_iter: {cur_iter}, loss: {loss_dict["loss"].item()}, pid:{os.getpid()}')
 
             scaler.scale(loss).backward()
             if cfg.OPTIMIZER.GRAD_CLIP > 0:
@@ -244,6 +244,7 @@ def val(cfg, val_loader, model, algo, cur_epoch, summary_writer):
         cur_epoch, total_loss["loss"]))
 
 
+@record
 def main():
     global profiler_output_path
 
@@ -293,7 +294,7 @@ def main():
             if param.grad is not None and torch.isnan(param.grad).any():
                 logger.warn(f"NaN gradient in {name}")
 
-    model.register_backward_hook(
+    model.register_full_backward_hook(
         lambda module, grad_input, grad_output: check_gradients(model))
 
     optimizer = construct_optimizer(model, cfg)

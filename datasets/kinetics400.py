@@ -14,6 +14,8 @@ from torchvision.io import read_video
 import utils.logging as logging
 from datasets.data_augment import create_data_augment, create_ssl_data_augment
 
+from datasets.kinetics400_filenames_to_skip import missing_filenames, corrupted_filenames, zero_duration_filenames, non_video_filenames
+
 logger = logging.get_logger(__name__)
 
 
@@ -22,20 +24,23 @@ class K400(torch.utils.data.Dataset):
         self.cfg = cfg
         self.num_contexts = cfg.DATA.NUM_CONTEXTS
         self.train_dataset = os.path.join(
-            cfg.args.workdir, f"Kinetics400/train.csv")
+            cfg.PATH_TO_DATASET, f"annotations/train.csv")
 
         with open(self.train_dataset, 'r') as f:
             reader = csv.reader(f)
-            dataset = [{"video_file": row[0], "video_label": row[1]}
+            dataset = [{"video_file": f'{row[4]}/{row[1]}_{row[2].zfill(6)}_{row[3].zfill(6)}.mp4', "video_label": row[0]}
                        for row in reader]
 
         self.dataset = []
-        self.error_videos = ["Kinetics400/train/blowing out candles/4o5v7aDXU9k_000000_000010.mp4",
-                             "Kinetics400/train/marching/uLaU_15HYdo_000002_000012.mp4",
-                             "Kinetics400/train/lunge/pNvkk7VDOws_000001_000011.mp4",
-                             "Kinetics400/train/bandaging/HvaU7W635to_000853_000863.mp4"]
+        self.error_videos = ["4o5v7aDXU9k_000000_000010.mp4",
+                             "uLaU_15HYdo_000002_000012.mp4",
+                             "pNvkk7VDOws_000001_000011.mp4",
+                             "HvaU7W635to_000853_000863.mp4",
+                             "Ni_jDS2N7yg_000111_000121.mp4",
+                             "Oj1S9U_19tU_000035_000045.mp4",
+                             "f5uOWYlSVnA_000048_000058.mp4"]
         for data in dataset:
-            if data["video_file"] not in self.error_videos:
+            if os.path.split(data["video_file"])[-1] not in self.error_videos + missing_filenames + corrupted_filenames + zero_duration_filenames + non_video_filenames:
                 self.dataset.append(data)
 
         logger.info(
@@ -50,31 +55,48 @@ class K400(torch.utils.data.Dataset):
 
     def __getitem__(self, index):
         name = self.dataset[index]["video_file"].split("/")[-1]
-        video_file = os.path.join(
-            self.cfg.args.workdir, self.dataset[index]["video_file"])
-        video, _, info = read_video(video_file, pts_unit='sec')
-        seq_len = len(video)
-        if seq_len == 0:
-            print(video_file)
-        # T H W C -> T C H W, [0,1] tensor
-        video = video.permute(0, 3, 1, 2).float() / 255.0
-        frame_label = -1 * torch.ones(seq_len)
+        logger.info(f'Loading video {name}, pid: {os.getpid()}')
+        try:
+            video_file = os.path.join(
+                self.cfg.PATH_TO_DATASET, self.dataset[index]["video_file"])
+            video, _, info = read_video(video_file, pts_unit='sec')
+            seq_len = len(video)
+            if seq_len == 0:
+                print(video_file)
+            # T H W C -> T C H W, [0,1] tensor
+            video = video.permute(0, 3, 1, 2).float() / 255.0
+            frame_label = -1 * torch.ones(seq_len)
 
-        names = [name, name]
-        steps_0, chosen_step_0, video_mask0 = self.sample_frames(
-            seq_len, self.num_frames)
-        view_0 = self.data_preprocess(video[steps_0.long()])
-        label_0 = frame_label[chosen_step_0.long()]
-        steps_1, chosen_step_1, video_mask1 = self.sample_frames(
-            seq_len, self.num_frames, pre_steps=steps_0)
-        view_1 = self.data_preprocess(video[steps_1.long()])
-        label_1 = frame_label[chosen_step_1.long()]
-        videos = torch.stack([view_0, view_1], dim=0)
-        labels = torch.stack([label_0, label_1], dim=0)
-        seq_lens = torch.tensor([seq_len, seq_len])
-        chosen_steps = torch.stack([chosen_step_0, chosen_step_1], dim=0)
-        video_mask = torch.stack([video_mask0, video_mask1], dim=0)
-        return videos, labels, seq_lens, chosen_steps, video_mask, names
+            if len(video) == 0:
+                logger.error(
+                    f'Error loading video {name}, video.shape: {video.shape}')
+                raise ValueError(f'Error loading video {name}')
+
+            names = [name, name]
+            steps_0, chosen_step_0, video_mask0 = self.sample_frames(
+                seq_len, self.num_frames)
+            view_0 = self.data_preprocess(video[steps_0.long()])
+            label_0 = frame_label[chosen_step_0.long()]
+            steps_1, chosen_step_1, video_mask1 = self.sample_frames(
+                seq_len, self.num_frames, pre_steps=steps_0)
+            view_1 = self.data_preprocess(video[steps_1.long()])
+            label_1 = frame_label[chosen_step_1.long()]
+            videos = torch.stack([view_0, view_1], dim=0)
+            labels = torch.stack([label_0, label_1], dim=0)
+            seq_lens = torch.tensor([seq_len, seq_len])
+            chosen_steps = torch.stack([chosen_step_0, chosen_step_1], dim=0)
+            video_mask = torch.stack([video_mask0, video_mask1], dim=0)
+            return videos, labels, seq_lens, chosen_steps, video_mask, names
+        except Exception as e:
+            import traceback
+            logger.error(f'Error loading video {name}, {e}')
+            traceback.print_exc()
+            raise e
+        except:
+            logger.error(f'Error loading video {name}')
+            raise
+        finally:
+            logger.info(f'Finished loading video {name}, pid: {os.getpid()}')
 
     def sample_frames(self, seq_len, num_frames, pre_steps=None):
         # When dealing with very long videos we can choose to sub-sample to fit

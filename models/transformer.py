@@ -343,27 +343,27 @@ class TransformerModel(nn.Module):
             with torch.no_grad():
                 curr_emb = self.backbone(curr_data)
 
-            logger.info(
-                f'curr_emb.shape: {curr_emb.shape}, curr_emb.max: {curr_emb.max()}, curr_emb.min: {curr_emb.min()}, torch.isnan(input).any(curr_emb): {torch.isnan(curr_emb).any()}, torch.isinf(input).any(curr_emb): {torch.isinf(curr_emb).any()}')
+            # logger.info(
+            #     f'curr_emb.shape: {curr_emb.shape}, curr_emb.max: {curr_emb.max()}, curr_emb.min: {curr_emb.min()}, torch.isnan(input).any(curr_emb): {torch.isnan(curr_emb).any()}, torch.isinf(input).any(curr_emb): {torch.isinf(curr_emb).any()}')
 
             curr_emb = self.res_finetune(curr_emb)
 
-            logger.info(
-                f'curr_emb.shape: {curr_emb.shape}, curr_emb.max: {curr_emb.max()}, curr_emb.min: {curr_emb.min()}, torch.isnan(input).any(curr_emb): {torch.isnan(curr_emb).any()}, torch.isinf(input).any(curr_emb): {torch.isinf(curr_emb).any()}')
+            # logger.info(
+            #     f'curr_emb.shape: {curr_emb.shape}, curr_emb.max: {curr_emb.max()}, curr_emb.min: {curr_emb.min()}, torch.isnan(input).any(curr_emb): {torch.isnan(curr_emb).any()}, torch.isinf(input).any(curr_emb): {torch.isinf(curr_emb).any()}')
 
-            for name, param in self.res_finetune.named_parameters():
-                if param.grad is not None and torch.isnan(param.grad).any():
-                    logger.info(f"NaNs detected in gradient of {name}")
-                elif param.grad is not None and torch.isinf(param.grad).any():
-                    logger.info(f"Infs detected in gradient of {name}")
+            # for name, param in self.res_finetune.named_parameters():
+            #     if param.grad is not None and torch.isnan(param.grad).any():
+            #         logger.info(f"NaNs detected in gradient of {name}")
+            #     elif param.grad is not None and torch.isinf(param.grad).any():
+            #         logger.info(f"Infs detected in gradient of {name}")
 
             _, out_c, out_h, out_w = curr_emb.size()
             curr_emb = curr_emb.contiguous().view(batch_size, cur_steps, out_c, out_h, out_w)
             backbone_out.append(curr_emb)
         x = torch.cat(backbone_out, dim=1)
 
-        logger.info(
-            f'x.shape: {x.shape}, x.max: {x.max()}, x.min: {x.min()}, torch.isnan(input).any(x): {torch.isnan(x).any()}, torch.isinf(input).any(x): {torch.isinf(x).any()}')
+        # logger.info(
+        #     f'x.shape: {x.shape}, x.max: {x.max()}, x.min: {x.min()}, torch.isnan(input).any(x): {torch.isnan(x).any()}, torch.isinf(input).any(x): {torch.isinf(x).any()}')
 
         x = self.embed(x, video_masks=video_masks)
 
