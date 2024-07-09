@@ -132,6 +132,7 @@ def get_rank():
         return 0
     return dist.get_rank()
 
+from datetime import timedelta
 
 def synchronize():
     """
@@ -145,7 +146,8 @@ def synchronize():
     world_size = dist.get_world_size()
     if world_size == 1:
         return
-    dist.barrier()
+    # dist.barrier()
+    dist.monitored_barrier(group=_get_global_gloo_group(), timeout=timedelta(seconds=10), wait_all_ranks=True)
 
 
 @functools.lru_cache()
