@@ -61,7 +61,7 @@ def train(cfg, train_loader, model, optimizer, scheduler, algo, cur_epoch, summa
         logger.info(f"update the training batch sampler to epoch {cur_epoch}")
     total_loss = {}
 
-    logger.info(f'epoch: {cur_epoch}, LR: {get_lr(optimizer)}')
+    logger.info(f'epoch: {cur_epoch}, LR: {get_lr(optimizer)}, scheduler.last_epoch: {scheduler.last_epoch}')
 
     from evaluation.sync_offset import SyncOffset
     sync_offset = SyncOffset(cfg)

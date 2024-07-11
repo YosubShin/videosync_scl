@@ -4,6 +4,7 @@ import json
 import cv2
 from tqdm import tqdm
 import pickle
+import numpy as np
 
 
 def main(split="train"):
@@ -20,6 +21,7 @@ def main(split="train"):
         data_root, f"NTU-SYN/pose/{'train' if split == 'train' else 'test'}")
 
     labels = [{}, {}]
+    num_frames = [{}, {}]
     event_ids = set()
 
     video_pair_ids = set()
@@ -45,6 +47,7 @@ def main(split="train"):
                 with open(os.path.join(root, file), 'r') as f:
                     data = json.load(f)
                     labels[i][event_id] = data['category_id']
+                    num_frames[i][event_id] = data['info']['num_frame']
 
     dataset = []
 
@@ -63,7 +66,10 @@ def main(split="train"):
                     continue
 
                 frame_offset = labels[j][event_id]
-                frame_select_filter = '' if frame_offset == 0 else f'select=gte(n\,{str(frame_offset)}),setpts=PTS-STARTPTS,'
+
+                num_frame = num_frames[j][event_id]
+                high = num_frame - np.random.randint(0, 15)
+                frame_select_filter = f'select=between(n\,{str(frame_offset)}\,{str(high)}),setpts=PTS-STARTPTS,'
 
                 cmd = f'ffmpeg -hide_banner -loglevel panic -y -i {video_file} -strict -2 -vf "{frame_select_filter}scale=224:224,setdar=1:1" -r 30 {output_file}'
                 os.system(cmd)
@@ -72,10 +78,10 @@ def main(split="train"):
             fps = int(video.get(cv2.CAP_PROP_FPS))
             width = int(video.get(cv2.CAP_PROP_FRAME_WIDTH))
             height = int(video.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            num_frames = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
 
             data_dict[f"video_file_{j}"] = output_file
-            data_dict[f"seq_len_{j}"] = num_frames
+            data_dict[f"seq_len_{j}"] = int(
+                video.get(cv2.CAP_PROP_FRAME_COUNT))
             data_dict[f"label_{j}"] = labels[j][event_id]
 
         dataset.append(data_dict)
