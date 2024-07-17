@@ -35,7 +35,7 @@ def construct_dataloader(cfg, split, mode="auto"):
                                                              num_workers=cfg.DATA.NUM_WORKERS, pin_memory=True, sampler=train_eval_sampler)]
         elif cfg.DATASETS[0] == "ntu" or cfg.DATASETS[0] == "cvid":
             from datasets.finegym import Finegym
-            train_dataset = Ntu(cfg, split, mode="train")
+            train_dataset = Ntu(cfg, split, mode=mode)
             train_sampler = torch.utils.data.distributed.DistributedSampler(
                 train_dataset) if cfg.NUM_GPUS > 1 else None
             train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=1,
@@ -53,7 +53,7 @@ def construct_dataloader(cfg, split, mode="auto"):
             #                                            drop_last=True)
 
             train_eval_dataset = Ntu(
-                cfg, split, mode="eval", sample_all=True, dataset=Ntu(cfg, split, mode="train").dataset)
+                cfg, split, mode="eval", sample_all=True, dataset=Ntu(cfg, split, mode=mode).dataset)
             train_eval_sampler = torch.utils.data.distributed.DistributedSampler(
                 train_eval_dataset) if cfg.NUM_GPUS > 1 else None
             train_eval_loader = [torch.utils.data.DataLoader(train_eval_dataset, batch_size=1, shuffle=False,

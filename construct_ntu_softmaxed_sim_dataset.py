@@ -14,6 +14,9 @@ from datasets import construct_dataloader
 
 from evaluation.sync_offset import SyncOffset, get_similarity
 from torch.nn import functional as Fun
+from torch.distributed.elastic.multiprocessing.errors import record
+import utils.distributed as du
+import random
 
 logger = logging.get_logger(__name__)
 
@@ -38,9 +41,9 @@ def save_similarity_and_labels(cfg, model, loader, dataset_type):
             embs.append(emb)
 
         similarity_matrix = get_similarity(
-            torch.tensor(embs[0]), torch.tensor(embs[1])).numpy()
+            torch.tensor(embs[0]).cuda(), torch.tensor(embs[1]).cuda())
         softmaxed_similarity_matrix = Fun.softmax(
-            torch.tensor(similarity_matrix), dim=1).numpy()
+            similarity_matrix, dim=1).cpu().numpy()
 
         all_similarity_matrices.append(softmaxed_similarity_matrix)
         all_labels.append((labels[0] - labels[1]).item())
@@ -65,7 +68,8 @@ def gather_data_from_all_processes(data):
     return data
 
 
-if __name__ == '__main__':
+@record
+def main():
     args = parse_args()
     cfg = load_config(args)
     setup_train_dir(cfg, cfg.LOGDIR, args.continue_train)
@@ -74,6 +78,14 @@ if __name__ == '__main__':
     cfg.args = args
 
     torch.distributed.init_process_group(backend='nccl', init_method='env://')
+
+    # Set up environment.
+    du.init_distributed_training(cfg)
+    # Set random seed from configs.
+    random.seed(cfg.RNG_SEED)
+    np.random.seed(cfg.RNG_SEED)
+    torch.manual_seed(cfg.RNG_SEED)
+
     # distributed logging and ignore warning message
     logging.setup_logging(cfg.LOGDIR)
 
@@ -92,8 +104,14 @@ if __name__ == '__main__':
     start_epoch = load_checkpoint(cfg, model, optimizer)
 
     # Setup Dataset Iterators from train and val datasets.
-    train_loader, train_emb_loader = construct_dataloader(cfg, "train")
+    train_loader, train_emb_loader = construct_dataloader(
+        cfg, "train", mode="eval")
     val_loader, val_emb_loader = construct_dataloader(cfg, "val")
 
-    save_similarity_and_labels(cfg, model, train_loader, 'train')
-    save_similarity_and_labels(cfg, model, val_loader, 'val')
+    with torch.no_grad():
+        save_similarity_and_labels(cfg, model, train_loader, 'train')
+        # save_similarity_and_labels(cfg, model, val_loader, 'val')
+
+
+if __name__ == '__main__':
+    main()

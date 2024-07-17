@@ -17,8 +17,6 @@ import csv
 
 
 logger = logging.get_logger(__name__)
-# logger.disabled = True
-logger.setLevel(INFO)
 
 sample_rate = 0.01
 
