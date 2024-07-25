@@ -53,7 +53,7 @@ def construct_dataloader(cfg, split, mode="auto"):
             #                                            drop_last=True)
 
             train_eval_dataset = Ntu(
-                cfg, split, mode="eval", sample_all=True, dataset=Ntu(cfg, split, mode=mode).dataset)
+                cfg, split, mode="eval")
             train_eval_sampler = torch.utils.data.distributed.DistributedSampler(
                 train_eval_dataset) if cfg.NUM_GPUS > 1 else None
             train_eval_loader = [torch.utils.data.DataLoader(train_eval_dataset, batch_size=1, shuffle=False,
@@ -135,14 +135,14 @@ def construct_dataloader(cfg, split, mode="auto"):
             val_eval_loader = [torch.utils.data.DataLoader(val_eval_dataset, batch_size=1, shuffle=False,
                                                            num_workers=cfg.DATA.NUM_WORKERS, pin_memory=True, sampler=val_eval_sampler)]
         elif cfg.DATASETS[0] == "ntu" or cfg.DATASETS[0] == "cvid":
-            val_dataset = Ntu(cfg, split, mode="eval", sample_all=True)
+            val_dataset = Ntu(cfg, split, mode="eval")
             val_sampler = torch.utils.data.distributed.DistributedSampler(
                 val_dataset) if cfg.NUM_GPUS > 1 else None
             val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=1, shuffle=False,
                                                      num_workers=cfg.DATA.NUM_WORKERS, pin_memory=True, sampler=None,
                                                      drop_last=True)
             val_eval_dataset = Ntu(
-                cfg, split, mode="eval", sample_all=True, dataset=val_dataset.dataset)
+                cfg, split, mode="eval")
             val_eval_sampler = torch.utils.data.distributed.DistributedSampler(
                 val_eval_dataset) if cfg.NUM_GPUS > 1 else None
             val_eval_loader = [torch.utils.data.DataLoader(val_eval_dataset, batch_size=1, shuffle=False,

@@ -41,7 +41,7 @@ EVAL:
     - sync_offset
   VAL_INTERVAL: 2
 IMAGE_SIZE: 224
-LOGDIR: /tmp/scl_transformer_cvid_logs
+LOGDIR: /home/yosubs/koa_scratch/tmp/scl_transformer_cvid_logs
 LOGGING:
   REPORT_INTERVAL: 20
 MODEL:

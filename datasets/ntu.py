@@ -18,7 +18,7 @@ logger.setLevel(INFO)
 
 
 class Ntu(torch.utils.data.Dataset):
-    def __init__(self, cfg, split, mode="auto", sample_all=False, dataset=None):
+    def __init__(self, cfg, split, mode="auto"):
         assert split in ["train", "val"]
         self.cfg = cfg
         self.split = split
@@ -26,12 +26,14 @@ class Ntu(torch.utils.data.Dataset):
             self.mode = "train" if self.split == "train" else "eval"
         else:
             self.mode = mode
-        self.sample_all = sample_all
         self.num_contexts = cfg.DATA.NUM_CONTEXTS
+
+        self.dataset_name = 'ntu' if 'ntu' in cfg.DATASETS else 'cvid'
+
         self.train_dataset = os.path.join(
-            cfg.args.workdir, 'ntu', f"train.pkl")
+            cfg.args.workdir, self.dataset_name, f"train.pkl")
         self.val_dataset = os.path.join(
-            cfg.args.workdir, 'ntu', f"val.pkl")
+            cfg.args.workdir, self.dataset_name, f"val.pkl")
 
         if self.split == "train":
             with open(self.train_dataset, 'rb') as f:
@@ -71,7 +73,7 @@ class Ntu(torch.utils.data.Dataset):
             name = self.dataset[index][f"video_file_{i}"].split(
                 "/")[-1].split(".")[0]
             video_file = os.path.join(
-                self.cfg.args.workdir, 'ntu', self.dataset[index][f"video_file_{i}"])
+                self.cfg.args.workdir, self.dataset_name, self.dataset[index][f"video_file_{i}"])
             video, _, info = read_video(video_file, pts_unit='sec')
             seq_len = len(video)
             if seq_len == 0:
@@ -108,7 +110,7 @@ class Ntu(torch.utils.data.Dataset):
         name = self.dataset[index][f"video_file_0"].split(
             "/")[-1].split(".")[0]
         video_file = os.path.join(
-            self.cfg.args.workdir, 'ntu', self.dataset[index][f"video_file_0"])
+            self.cfg.args.workdir, self.dataset_name, self.dataset[index][f"video_file_0"])
         video, _, info = read_video(video_file, pts_unit='sec')
         # T H W C -> T C H W, [0,1] tensor
         video = video.permute(0, 3, 1, 2).float() / 255.0
@@ -151,7 +153,7 @@ class Ntu(torch.utils.data.Dataset):
             name = self.dataset[index][f"video_file_{i}"].split(
                 "/")[-1].split(".")[0]
             video_file = os.path.join(
-                self.cfg.args.workdir, 'ntu', self.dataset[index][f"video_file_{i}"])
+                self.cfg.args.workdir, self.dataset_name, self.dataset[index][f"video_file_{i}"])
             video, _, info = read_video(video_file, pts_unit='sec')
             # T H W C -> T C H W, [0,1] tensor
             video = video.permute(0, 3, 1, 2).float() / 255.0

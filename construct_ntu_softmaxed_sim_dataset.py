@@ -48,11 +48,6 @@ def save_similarity_and_labels(cfg, model, loader, dataset_type):
         all_similarity_matrices.append(softmaxed_similarity_matrix)
         all_labels.append((labels[0] - labels[1]).item())
 
-    # Gather data from all processes
-    all_similarity_matrices = gather_data_from_all_processes(
-        all_similarity_matrices)
-    all_labels = gather_data_from_all_processes(all_labels)
-
     # Save data only from the main process
     if torch.distributed.get_rank() == 0:
         np.save(f'{dataset_type}_softmaxed_sim_12.npy',
@@ -109,8 +104,8 @@ def main():
     val_loader, val_emb_loader = construct_dataloader(cfg, "val")
 
     with torch.no_grad():
-        save_similarity_and_labels(cfg, model, train_loader, 'train')
-        # save_similarity_and_labels(cfg, model, val_loader, 'val')
+        # save_similarity_and_labels(cfg, model, train_emb_loader, 'train')
+        save_similarity_and_labels(cfg, model, val_loader, 'val')
 
 
 if __name__ == '__main__':
