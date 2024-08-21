@@ -43,15 +43,17 @@ def pad_matrices(matrices, target_size):
     return np.vstack(padded_matrices)
 
 
+prefix = '/home/yosubs/videosync/videosync/human_pose_ntu'
+
 # Load prepared data
 X_train = np.load(
-    '/home/yosubs/videosync_scl/train_softmaxed_sim_12.npy', allow_pickle=True)
+    f'{prefix}_train_softmaxed_sim_12.npy', allow_pickle=True)
 y_train = np.load(
-    '/home/yosubs/videosync_scl/train_softmaxed_sim_12_labels.npy', allow_pickle=True)
+    f'{prefix}_train_softmaxed_sim_12_labels.npy', allow_pickle=True)
 X_val = np.load(
-    '/home/yosubs/videosync_scl/val_softmaxed_sim_12.npy', allow_pickle=True)
+    f'{prefix}_val_softmaxed_sim_12.npy', allow_pickle=True)
 y_val = np.load(
-    '/home/yosubs/videosync_scl/val_softmaxed_sim_12_labels.npy', allow_pickle=True)
+    f'{prefix}_val_softmaxed_sim_12_labels.npy', allow_pickle=True)
 
 print(f'Shape of X_train: {X_train.shape}, Shape of y_train: {y_train.shape}')
 print(f'Shape of X_val: {X_val.shape}, Shape of y_val: {y_val.shape}')
@@ -66,7 +68,7 @@ print(
 print(f'Shape of y_train: {y_train.shape}, Shape of y_val: {y_val.shape}')
 
 # Initialize models
-log_reg = LogisticRegression(n_jobs=-1, verbose=True)
+log_reg = LogisticRegression(n_jobs=-1, verbose=True, max_iter=1000)
 # svm = SVR()
 
 # Train models
@@ -101,5 +103,5 @@ print(f'Baseline (Median) - MAE: {baseline_mae}, MedAE: {baseline_medae}')
 weights = log_reg.coef_
 print(f'Weights: {weights}')
 
-with open('logistic_regression_model.pkl', 'wb') as file:
+with open(f'{prefix}_logistic_regression_model.pkl', 'wb') as file:
     pickle.dump(log_reg, file)

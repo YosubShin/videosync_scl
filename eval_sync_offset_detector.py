@@ -48,9 +48,9 @@ def pad_matrices(matrices, target_size):
 #     '/home/yosubs/koa_scratch/tmp/scl_transformer_ntu_logs/val_softmaxed_sim_12.npy', allow_pickle=True)
 # y = np.load('/home/yosubs/koa_scratch/tmp/scl_transformer_ntu_logs/val_softmaxed_sim_12_labels.npy', allow_pickle=True)
 X = np.load(
-    '/home/yosubs/videosync_scl/cvid_val_softmaxed_sim_12.npy', allow_pickle=True)
+    '/home/yosubs/videosync_scl/human_pose_ntu_softmaxed_sim_12.npy', allow_pickle=True)
 y = np.load(
-    '/home/yosubs/videosync_scl/cvid_val_softmaxed_sim_12_labels.npy', allow_pickle=True)
+    '/home/yosubs/videosync_scl/human_pose_ntu_softmaxed_sim_12_labels.npy', allow_pickle=True)
 
 print(f'Shape of X: {X.shape}, Shape of y: {y.shape}')
 
