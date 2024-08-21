@@ -14,6 +14,7 @@ import seaborn as sns
 import os
 from datetime import datetime
 import csv
+from utils.dtw import dtw
 
 
 logger = logging.get_logger(__name__)
@@ -204,6 +205,11 @@ def decision_offset(cfg, view1, view2, label, name0, name1, now_str, cur_epoch, 
         [i * 1.0 for i in range(view1.size(0))]).cuda()).reshape(-1, 1)
 
     predict = softmaxed_sim_12.argmax(dim=1)
+
+    _, _, _, path = dtw(view1.cpu(), view2.cpu(), dist='sqeuclidean')
+    _, uix = np.unique(path[0], return_index=True)
+    nns = path[1][uix]
+    predict = torch.tensor(nns)
 
     # Only plot if we are sampling
     if sample:
