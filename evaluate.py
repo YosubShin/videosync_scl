@@ -11,7 +11,9 @@ import numpy as np
 from tqdm import tqdm
 import utils.logging as logging
 from torch.utils.tensorboard import SummaryWriter
+from torch.distributed.elastic.multiprocessing.errors import record
 
+import utils.distributed as du
 from utils.parser import parse_args, load_config, setup_train_dir
 from models import build_model, save_checkpoint, load_checkpoint
 from utils.optimizer import construct_optimizer
@@ -158,6 +160,7 @@ def evaluate_once(cfg, model, train_loader, val_loader, train_emb_loader, val_em
                                   avg_metric, cur_epoch)
 
 
+@record
 def evaluate():
     """Evaluate embeddings."""
     args = parse_args()
@@ -168,6 +171,7 @@ def evaluate():
     cfg.args = args
 
     torch.distributed.init_process_group(backend='nccl', init_method='env://')
+    du.init_distributed_training(cfg)
     # distributed logging and ignore warning message
     logging.setup_logging(cfg.LOGDIR)
     # Setup summary writer.
