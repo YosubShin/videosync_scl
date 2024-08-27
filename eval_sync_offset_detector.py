@@ -43,46 +43,47 @@ def pad_matrices(matrices, target_size):
     return np.vstack(padded_matrices)
 
 
-# Load prepared data
-# X = np.load(
-#     '/home/yosubs/koa_scratch/tmp/scl_transformer_ntu_logs/val_softmaxed_sim_12.npy', allow_pickle=True)
-# y = np.load('/home/yosubs/koa_scratch/tmp/scl_transformer_ntu_logs/val_softmaxed_sim_12_labels.npy', allow_pickle=True)
-X = np.load(
-    '/home/yosubs/videosync_scl/human_pose_ntu_softmaxed_sim_12.npy', allow_pickle=True)
-y = np.load(
-    '/home/yosubs/videosync_scl/human_pose_ntu_softmaxed_sim_12_labels.npy', allow_pickle=True)
+if __name__ == "__main__":
+    # Load prepared data
+    # X = np.load(
+    #     '/home/yosubs/koa_scratch/tmp/scl_transformer_ntu_logs/val_softmaxed_sim_12.npy', allow_pickle=True)
+    # y = np.load('/home/yosubs/koa_scratch/tmp/scl_transformer_ntu_logs/val_softmaxed_sim_12_labels.npy', allow_pickle=True)
+    X = np.load(
+        '/home/yosubs/videosync_scl/human_pose_ntu_softmaxed_sim_12.npy', allow_pickle=True)
+    y = np.load(
+        '/home/yosubs/videosync_scl/human_pose_ntu_softmaxed_sim_12_labels.npy', allow_pickle=True)
 
-print(f'Shape of X: {X.shape}, Shape of y: {y.shape}')
+    print(f'Shape of X: {X.shape}, Shape of y: {y.shape}')
 
-# Pad matrices to target_size*target_size
-X_padded = pad_matrices(X, target_size=256)
-print(f'Shape of X_padded: {X_padded.shape}')
+    # Pad matrices to target_size*target_size
+    X_padded = pad_matrices(X, target_size=256)
+    print(f'Shape of X_padded: {X_padded.shape}')
 
-X_val = X_padded
-y_val = y
+    X_val = X_padded
+    y_val = y
 
-print(f'Shape of X_val: {X_val.shape}')
-print(f'Shape of y_val: {y_val.shape}')
+    print(f'Shape of X_val: {X_val.shape}')
+    print(f'Shape of y_val: {y_val.shape}')
 
-with open('logistic_regression_model.pkl', 'rb') as file:
-    log_reg = pickle.load(file)
+    with open('logistic_regression_model.pkl', 'rb') as file:
+        log_reg = pickle.load(file)
 
-# Evaluate models
-y_pred_log_reg = log_reg.predict(X_val)
+    # Evaluate models
+    y_pred_log_reg = log_reg.predict(X_val)
 
-mae_log_reg = mean_absolute_error(y_val, y_pred_log_reg)
-medae_log_reg = median_absolute_error(y_val, y_pred_log_reg)
+    mae_log_reg = mean_absolute_error(y_val, y_pred_log_reg)
+    medae_log_reg = median_absolute_error(y_val, y_pred_log_reg)
 
-print(f'Logistic Regression - MAE: {mae_log_reg}, MedAE: {medae_log_reg}')
+    print(f'Logistic Regression - MAE: {mae_log_reg}, MedAE: {medae_log_reg}')
 
-# Calculate baseline using median approach
-baseline_offsets = []
-for i, softmaxed_sim_12 in enumerate(X):
-    # print(f'Shape of softmaxed_sim_12: {softmaxed_sim_12.shape}')
-    median_offset = calculate_median_offset(softmaxed_sim_12)
-    baseline_offsets.append(median_offset)
+    # Calculate baseline using median approach
+    baseline_offsets = []
+    for i, softmaxed_sim_12 in enumerate(X):
+        # print(f'Shape of softmaxed_sim_12: {softmaxed_sim_12.shape}')
+        median_offset = calculate_median_offset(softmaxed_sim_12)
+        baseline_offsets.append(median_offset)
 
-baseline_mae = mean_absolute_error(y, baseline_offsets)
-baseline_medae = median_absolute_error(y, baseline_offsets)
+    baseline_mae = mean_absolute_error(y, baseline_offsets)
+    baseline_medae = median_absolute_error(y, baseline_offsets)
 
-print(f'Baseline (Median) - MAE: {baseline_mae}, MedAE: {baseline_medae}')
+    print(f'Baseline (Median) - MAE: {baseline_mae}, MedAE: {baseline_medae}')

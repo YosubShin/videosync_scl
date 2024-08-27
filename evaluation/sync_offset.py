@@ -1,4 +1,5 @@
 # coding=utf-8
+import cv2
 import torch
 import numpy as np
 from scipy.spatial.distance import cdist
@@ -15,7 +16,8 @@ import os
 from datetime import datetime
 import csv
 from utils.dtw import dtw
-
+import pickle
+from eval_sync_offset_detector import pad_matrices
 
 logger = logging.get_logger(__name__)
 
@@ -38,6 +40,9 @@ class SyncOffset(object):
         self.cur_iter = None
         self.sample = None
 
+        with open('logistic_regression_model.pkl', 'rb') as file:
+            self.log_reg = pickle.load(file)
+
     def evaluate(self, model, train_loader, val_loader, cur_epoch, summary_writer, sample=False, cur_iter=None):
         model.eval()
 
@@ -49,8 +54,10 @@ class SyncOffset(object):
 
         abs_frame_errors_median = []
         abs_frame_errors_mean = []
+        abs_frame_errors_log_reg = []
         frame_errors_median = []
         frame_errors_mean = []
+        frame_errors_log_reg = []
 
         csv_data = []
 
@@ -73,16 +80,20 @@ class SyncOffset(object):
                     embs.append(emb)
 
                 abs_frame_error_dict = self.get_sync_offset(
-                    embs[0], labels[0], embs[1], labels[1], names[0][0], names[1][0])
+                    videos[0], videos[1], embs[0], labels[0], embs[1], labels[1], names[0][0], names[1][0])
 
                 abs_frame_errors_median.append(
                     abs_frame_error_dict['abs_median'])
                 abs_frame_errors_mean.append(
                     abs_frame_error_dict['abs_mean'])
+                abs_frame_errors_log_reg.append(
+                    abs_frame_error_dict['abs_log_reg'])
                 frame_errors_median.append(
                     abs_frame_error_dict['err_median'])
                 frame_errors_mean.append(
                     abs_frame_error_dict['err_mean'])
+                frame_errors_log_reg.append(
+                    abs_frame_error_dict['err_log_reg'])
 
                 csv_data.append([names[0][0], labels[0][0].item(), names[1][0], labels[1][0].item(),
                                 abs_frame_error_dict['abs_median'].item(
@@ -99,6 +110,10 @@ class SyncOffset(object):
         mean_std_dev = np.std(abs_frame_errors_mean)
         mean_moe = calculate_margin_of_error(abs_frame_errors_mean)
 
+        log_reg_abs_frame_error = np.mean(abs_frame_errors_log_reg)
+        log_reg_std_dev = np.std(abs_frame_errors_log_reg)
+        log_reg_moe = calculate_margin_of_error(abs_frame_errors_log_reg)
+
         if not sample:
             logger.info('epoch[{}/{}] mean of abs_frame_errors_median: {:.4f}'.format(
                 cur_epoch, self.cfg.TRAIN.MAX_EPOCHS, median_abs_frame_error))
@@ -109,21 +124,12 @@ class SyncOffset(object):
             logger.info('epoch[{}/{}] len(abs_frame_errors_median): {}'.format(
                 cur_epoch, self.cfg.TRAIN.MAX_EPOCHS, len(abs_frame_errors_median)))
 
-            logger.info('epoch[{}/{}] mean of abs_frame_errors_mean: {:.4f}'.format(
-                cur_epoch, self.cfg.TRAIN.MAX_EPOCHS, mean_abs_frame_error))
-            logger.info('epoch[{}/{}] std dev for abs_frame_errors_mean: {:.4f}'.format(
-                cur_epoch, self.cfg.TRAIN.MAX_EPOCHS, mean_std_dev))
-            logger.info('epoch[{}/{}] moe(abs_frame_errors_mean): {}'.format(
-                cur_epoch, self.cfg.TRAIN.MAX_EPOCHS, len(abs_frame_errors_mean)))
-            logger.info('epoch[{}/{}] len(abs_frame_errors_mean): {}'.format(
-                cur_epoch, self.cfg.TRAIN.MAX_EPOCHS, len(abs_frame_errors_mean)))
-
             wandb.log({"median_abs_frame_error": median_abs_frame_error,
                        "median_abs_frame_error_std_dev": median_std_dev,
                        "median_abs_frame_error_moe": median_moe,
-                       "mean_abs_frame_error": mean_abs_frame_error,
-                       "mean_abs_frame_error_std_dev": mean_std_dev,
-                       "mean_abs_frame_error_moe": mean_moe
+                       "log_reg_abs_frame_error": log_reg_abs_frame_error,
+                       "log_reg_abs_frame_error_std_dev": log_reg_std_dev,
+                       "log_reg_abs_frame_error_moe": log_reg_moe,
                        })
 
         # Write CSV data to file
@@ -148,8 +154,8 @@ class SyncOffset(object):
             "mean_abs_frame_error_moe": mean_moe
         }
 
-    def get_sync_offset(self, embs0, label0, embs1, label1, name0, name1):
-        return decision_offset(self.cfg, torch.tensor(embs0).cuda(), torch.tensor(embs1).cuda(), label0 - label1, name0, name1, self.now_str, self.cur_epoch, self.cur_iter, self.sample)
+    def get_sync_offset(self, video0, video1, embs0, label0, embs1, label1, name0, name1):
+        return decision_offset(self.cfg, video0, video1, torch.tensor(embs0).cuda(), torch.tensor(embs1).cuda(), label0 - label1, name0, name1, self.now_str, self.cur_epoch, self.cur_iter, self.sample, self.log_reg)
 
     def get_embs(self, model, video, frame_label, seq_len, chosen_steps, video_masks, name):
         logger.debug(
@@ -191,7 +197,59 @@ def get_similarity(view1, view2):
     return similarity
 
 
-def decision_offset(cfg, view1, view2, label, name0, name1, now_str, cur_epoch, cur_iter, sample):
+def plot_frames(video0, video1, name0, name1, label, predicted, cur_epoch, cur_iter, cfg, num_frames=8, frame_stride=10):
+    logger.debug(f'video0.shape: {video0.shape}, video1.shape: {video1.shape}')
+
+    # B T C H W, [0,1] tensor -> T H W C [0, 255]
+    video0 = (video0.squeeze(0).permute(0, 2, 3, 1)).cpu().numpy()
+    video1 = (video1.squeeze(0).permute(0, 2, 3, 1)).cpu().numpy()
+
+    fig, axes = plt.subplots(4, num_frames, figsize=(20, 10))
+
+    logger.debug(
+        f'video0.shape: {video0.shape}, video1.shape: {video1.shape}, video0.min: {video0.min()}, video0.max: {video0.max()}')
+
+    for i in range(num_frames):
+        for j in range(2):
+            if j == 0:
+                fig.text(
+                    0.05, 0.92, f'label: {label.item()}', ha='left', fontsize=14)
+            else:
+                fig.text(
+                    0.05, 0.42, f'predicted: {predicted.item()}', ha='left', fontsize=14)
+
+            sync_offset = label if j == 0 else predicted
+            if sync_offset >= 0:
+                if i * frame_stride + sync_offset >= len(video1):
+                    continue
+                frame1 = video0[i * frame_stride]
+                frame2 = video1[i * frame_stride + sync_offset]
+            else:
+                if i * frame_stride + sync_offset < 0:
+                    continue
+                frame1 = video0[i * frame_stride]
+                frame2 = video1[i * frame_stride + sync_offset]
+
+            # This is a hack to fit the normalized pixel values under a reasonable range.
+            frame1 = (frame1 + 3.0) / 6.0
+            frame2 = (frame2 + 3.0) / 6.0
+
+            # Plot the frames side by side in a single figure
+            axes[j * 2 + 0, i].imshow(frame1)
+            axes[j * 2 + 0, i].set_title(f"Video 1 - Frame {i * frame_stride}")
+            axes[j * 2 + 0, i].axis('off')
+
+            axes[j * 2 + 1, i].imshow(frame2)
+            axes[j * 2 + 1, i].set_title(f"Video 2 - Frame {i * frame_stride}")
+            axes[j * 2 + 1, i].axis('off')
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(
+        cfg.LOGDIR, 'eval_logs', f"{name0}_{name1}_epoch_{cur_epoch}_iter_{cur_iter}_frames.png"))
+    plt.close(fig)
+
+
+def decision_offset(cfg, video0, video1, view1, view2, label, name0, name1, now_str, cur_epoch, cur_iter, sample, log_reg):
     logger.debug(f'view1.shape: {view1.shape}')
     logger.debug(f'view2.shape: {view2.shape}')
 
@@ -211,34 +269,13 @@ def decision_offset(cfg, view1, view2, label, name0, name1, now_str, cur_epoch, 
     nns = path[1][uix]
     predict = torch.tensor(nns)
 
-    # Only plot if we are sampling
-    if sample:
-        plt.figure(figsize=(10, 8))
-        sns.heatmap(softmaxed_sim_12.cpu().numpy(),
-                    annot=False, cmap="viridis", cbar=True, square=True)
-        plt.plot(predict.cpu(), np.arange(len(predict.cpu())), color='red',
-                 marker='o', linestyle='-', linewidth=2, markersize=5)
+    _, _, _, path = dtw(view1.cpu(), view2.cpu(), dist='sqeuclidean')
+    _, uix = np.unique(path[0], return_index=True)
+    nns = path[1][uix]
+    predict = torch.tensor(nns)
 
-        k = label.item() * -1
-        # Create the points for the line with y-intercept k
-        x_line = np.arange(softmaxed_sim_12.shape[1])
-        y_line = x_line + k
-
-        valid_indices = (y_line >= 0) & (y_line < softmaxed_sim_12.shape[0])
-        x_line = x_line[valid_indices]
-        y_line = y_line[valid_indices]
-
-        plt.plot(x_line, y_line, color='blue', linestyle='--',
-                 linewidth=2, label=f'Line with y-intercept {k}')
-
-        plt.gca().set_aspect('equal', adjustable='box')
-
-        # Save the heatmap to a PNG file
-        plt.title(
-            f"{name0}_{name1}_softmaxed_sim_12_epoch_{cur_epoch}_iter_{cur_iter}")
-        plt.savefig(os.path.join(
-            cfg.LOGDIR, 'eval_logs', f"{name0}_{name1}_softmaxed_sim_12_epoch_{cur_epoch}_iter_{cur_iter}_{now_str}.png"))
-        plt.close()
+    X_padded = pad_matrices([softmaxed_sim_12.cpu()], target_size=256)
+    log_reg_sync_offset = log_reg.predict(X_padded)[0]
 
     logger.debug(f'predict: {predict}')
 
@@ -265,14 +302,75 @@ def decision_offset(cfg, view1, view2, label, name0, name1, now_str, cur_epoch, 
     abs_median = abs(num_frames_median - label)
     abs_mean = abs(num_frames_mean - label)
 
+    plot_frames(video0, video1, name0, name1, label,
+                log_reg_sync_offset, cur_epoch, cur_iter, cfg)
+
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(softmaxed_sim_12.cpu().numpy(),
+                annot=False, cmap="viridis", cbar=True, square=True)
+    plt.plot(predict.cpu(), np.arange(len(predict.cpu())), color='red',
+             marker='o', linestyle='-', linewidth=2, markersize=5)
+
+    # Create a line for label
+    k = label.item() * -1
+    # Create the points for the line with y-intercept k
+    x_line = np.arange(softmaxed_sim_12.shape[1])
+    y_line = x_line + k
+
+    valid_indices = (y_line >= 0) & (y_line < softmaxed_sim_12.shape[0])
+    x_line = x_line[valid_indices]
+    y_line = y_line[valid_indices]
+
+    plt.plot(x_line, y_line, color='blue', linestyle='--',
+             linewidth=2, label=f'Label')
+
+    # Create a line for log_reg
+    k = log_reg_sync_offset.item() * -1
+    # Create the points for the line with y-intercept k
+    x_line = np.arange(softmaxed_sim_12.shape[1])
+    y_line = x_line + k
+
+    valid_indices = (y_line >= 0) & (y_line < softmaxed_sim_12.shape[0])
+    x_line = x_line[valid_indices]
+    y_line = y_line[valid_indices]
+
+    plt.plot(x_line, y_line, color='green', linestyle='--',
+             linewidth=2, label=f'Logistic regression')
+
+    # Create a line for median
+    k = num_frames_median * -1
+    # Create the points for the line with y-intercept k
+    x_line = np.arange(softmaxed_sim_12.shape[1])
+    y_line = x_line + k
+
+    valid_indices = (y_line >= 0) & (y_line < softmaxed_sim_12.shape[0])
+    x_line = x_line[valid_indices]
+    y_line = y_line[valid_indices]
+
+    plt.plot(x_line, y_line, color='red', linestyle='--',
+             linewidth=2, label=f'Median')
+
+    plt.legend()
+
+    plt.gca().set_aspect('equal', adjustable='box')
+
+    # Save the heatmap to a PNG file
+    plt.title(
+        f"{name0}_{name1}_epoch_{cur_epoch}_iter_{cur_iter}")
+    plt.savefig(os.path.join(
+        cfg.LOGDIR, 'eval_logs', f"{name0}_{name1}_epoch_{cur_epoch}_iter_{cur_iter}_sim.png"))
+    plt.close()
+
     logger.info(
-        f'name0: {name0}, name1: {name1}, abs_frame_error (median): {abs_median}, abs_frame_error (mean): {abs_mean}, frame_error (median): {num_frames_median - label}, frame_error (mean): {num_frames_mean - label}')
+        f'name0: {name0}, frame_error (median): {num_frames_median - label}, frame_error (log_reg): {log_reg_sync_offset - label}')
 
     return {
         'abs_median': abs_median,
         'abs_mean': abs_mean,
         'err_median': num_frames_median - label,
         'err_mean': num_frames_mean - label,
+        'abs_log_reg': abs(log_reg_sync_offset - label),
+        'err_log_reg': log_reg_sync_offset - label,
     }
 
 

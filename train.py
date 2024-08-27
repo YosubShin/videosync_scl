@@ -61,7 +61,8 @@ def train(cfg, train_loader, model, optimizer, scheduler, algo, cur_epoch, summa
         logger.info(f"update the training batch sampler to epoch {cur_epoch}")
     total_loss = {}
 
-    logger.info(f'epoch: {cur_epoch}, LR: {get_lr(optimizer)}, scheduler.last_epoch: {scheduler.last_epoch}')
+    logger.info(
+        f'epoch: {cur_epoch}, LR: {get_lr(optimizer)}, scheduler.last_epoch: {scheduler.last_epoch}')
 
     from evaluation.sync_offset import SyncOffset
     sync_offset = SyncOffset(cfg)
@@ -71,19 +72,20 @@ def train(cfg, train_loader, model, optimizer, scheduler, algo, cur_epoch, summa
     for cur_iter, (videos, _labels, seq_lens, chosen_steps, video_masks, names) in enumerate(train_loader):
         logger.debug(f'cur_iter: {cur_iter}, name: {names[0]}')
 
-        if du.is_root_proc() and cur_iter % 100 == 0:
-            sync_offset_res = sync_offset.evaluate(
-                model, train_loader, val_loader, cur_epoch, summary_writer, sample=True, cur_iter=cur_iter)
-            logger.info('done running sync_offset.evaluate()')
+        if du.is_root_proc() and cur_iter % 500 == 0:
+            if cur_iter == 0:
+                sync_offset_res = sync_offset.evaluate(
+                    model, train_loader, val_loader, cur_epoch, summary_writer, sample=False, cur_iter=cur_iter)
+            else:
+                sync_offset_res = sync_offset.evaluate(
+                    model, train_loader, val_loader, cur_epoch, summary_writer, sample=True, cur_iter=cur_iter)
+                logger.info('done running sync_offset.evaluate()')
 
-            wandb.log({
-                "median_abs_frame_error_sampled": sync_offset_res['median_abs_frame_error'],
-                "median_abs_frame_error_std_dev_sampled": sync_offset_res['median_abs_frame_error_std_dev'],
-                "median_abs_frame_error_moe_sampled": sync_offset_res['median_abs_frame_error_moe'],
-                "mean_abs_frame_error_sampled": sync_offset_res['mean_abs_frame_error'],
-                "mean_abs_frame_error_std_dev_sampled": sync_offset_res['mean_abs_frame_error_std_dev'],
-                "mean_abs_frame_error_moe_sampled": sync_offset_res['mean_abs_frame_error_moe'],
-            })
+                wandb.log({
+                    "median_abs_frame_error_sampled": sync_offset_res['median_abs_frame_error'],
+                    "median_abs_frame_error_std_dev_sampled": sync_offset_res['median_abs_frame_error_std_dev'],
+                    "median_abs_frame_error_moe_sampled": sync_offset_res['median_abs_frame_error_moe'],
+                })
 
             model.train()
 
