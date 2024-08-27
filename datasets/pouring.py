@@ -43,7 +43,27 @@ class Pouring(torch.utils.data.Dataset):
         elif self.mode == "train":
             self.data_preprocess = create_data_augment(cfg, augment=True)
         else:
-            self.data_preprocess = create_data_augment(cfg, augment=False)
+            # self.data_preprocess = create_data_augment(cfg, augment=False)
+            ops = []
+            from datasets.data_augment import AugmentOp, color_normalization, ComposeOp
+
+            def resize(images):
+                return torch.nn.functional.interpolate(
+                    images,
+                    size=(self.cfg.IMAGE_SIZE, self.cfg.IMAGE_SIZE),
+                    mode="bilinear",
+                    align_corners=False,
+                )
+
+            ops.append(AugmentOp(
+                resize
+            ))
+
+            ops.append(AugmentOp(color_normalization, **{
+                "mean": [0.485, 0.456, 0.406],
+                "stddev": [0.229, 0.224, 0.225]
+            }))
+            self.data_preprocess = ComposeOp(ops)
 
         if 'tcn' in cfg.TRAINING_ALGO:
             self.num_frames = self.num_frames // 2
@@ -128,7 +148,7 @@ class Pouring(torch.utils.data.Dataset):
             label = self.dataset[index][f"label_{i}"]
 
             # Let's take the middle of the video
-            start_offset = 80
+            start_offset = 40
             video = video[start_offset + label:start_offset + 80 + label]
             seq_len = len(video)
             if seq_len == 0:

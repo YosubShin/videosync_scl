@@ -218,19 +218,18 @@ def plot_frames(video0, video1, name0, name1, label, predicted, cur_epoch, cur_i
     video1 = (video1.squeeze(0).permute(0, 2, 3, 1)).cpu().numpy()
 
     fig, axes = plt.subplots(4, num_frames, figsize=(20, 10))
+    plt.subplots_adjust(left=0.15, right=0.95, top=0.9, bottom=0.1)
 
     logger.debug(
         f'video0.shape: {video0.shape}, video1.shape: {video1.shape}, video0.min: {video0.min()}, video0.max: {video0.max()}')
 
+    fig.text(
+        0.05, 0.8, f'label: {label.item()}', ha='center', fontsize=14)
+    fig.text(
+        0.05, 0.3, f'predicted: {predicted.item()}', ha='center', fontsize=14)
+
     for i in range(num_frames):
         for j in range(2):
-            if j == 0:
-                fig.text(
-                    0.05, 0.92, f'label: {label.item()}', ha='left', fontsize=14)
-            else:
-                fig.text(
-                    0.05, 0.42, f'predicted: {predicted.item()}', ha='left', fontsize=14)
-
             sync_offset = label if j == 0 else predicted
             if sync_offset >= 0:
                 if i * frame_stride + sync_offset >= len(video1):
@@ -256,7 +255,8 @@ def plot_frames(video0, video1, name0, name1, label, predicted, cur_epoch, cur_i
             axes[j * 2 + 1, i].set_title(f"Video 2 - Frame {i * frame_stride}")
             axes[j * 2 + 1, i].axis('off')
 
-    plt.tight_layout()
+    # Make space for the text on the left
+    plt.tight_layout(rect=[0.15, 0, 1, 1])
     plt.savefig(os.path.join(
         cfg.LOGDIR, 'eval_logs', f"{name0}_{name1}_epoch_{cur_epoch}_iter_{cur_iter}_frames.png"))
     plt.close(fig)
