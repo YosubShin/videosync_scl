@@ -55,9 +55,11 @@ class SyncOffset(object):
         abs_frame_errors_median = []
         abs_frame_errors_mean = []
         abs_frame_errors_log_reg = []
+        abs_frame_errors_dtw = []
         frame_errors_median = []
         frame_errors_mean = []
         frame_errors_log_reg = []
+        frame_errors_dtw = []
 
         csv_data = []
 
@@ -88,12 +90,16 @@ class SyncOffset(object):
                     abs_frame_error_dict['abs_mean'])
                 abs_frame_errors_log_reg.append(
                     abs_frame_error_dict['abs_log_reg'])
+                abs_frame_errors_dtw.append(
+                    abs_frame_error_dict['abs_dtw'])
                 frame_errors_median.append(
                     abs_frame_error_dict['err_median'])
                 frame_errors_mean.append(
                     abs_frame_error_dict['err_mean'])
                 frame_errors_log_reg.append(
                     abs_frame_error_dict['err_log_reg'])
+                frame_errors_dtw.append(
+                    abs_frame_error_dict['err_dtw'])
 
                 csv_data.append([names[0][0], labels[0][0].item(), names[1][0], labels[1][0].item(),
                                 abs_frame_error_dict['abs_median'].item(
@@ -114,6 +120,10 @@ class SyncOffset(object):
         log_reg_std_dev = np.std(abs_frame_errors_log_reg)
         log_reg_moe = calculate_margin_of_error(abs_frame_errors_log_reg)
 
+        dtw_abs_frame_error = np.mean(abs_frame_errors_dtw)
+        dtw_std_dev = np.std(abs_frame_errors_dtw)
+        dtw_moe = calculate_margin_of_error(abs_frame_errors_dtw)
+
         if not sample:
             logger.info('epoch[{}/{}] mean of abs_frame_errors_median: {:.4f}'.format(
                 cur_epoch, self.cfg.TRAIN.MAX_EPOCHS, median_abs_frame_error))
@@ -130,6 +140,9 @@ class SyncOffset(object):
                        "log_reg_abs_frame_error": log_reg_abs_frame_error,
                        "log_reg_abs_frame_error_std_dev": log_reg_std_dev,
                        "log_reg_abs_frame_error_moe": log_reg_moe,
+                       "dtw_abs_frame_error": dtw_abs_frame_error,
+                       "dtw_abs_frame_error_std_dev": dtw_std_dev,
+                       "dtw_abs_frame_error_moe": dtw_moe,
                        })
 
         # Write CSV data to file
@@ -267,37 +280,35 @@ def decision_offset(cfg, video0, video1, view1, view2, label, name0, name1, now_
     _, _, _, path = dtw(view1.cpu(), view2.cpu(), dist='sqeuclidean')
     _, uix = np.unique(path[0], return_index=True)
     nns = path[1][uix]
-    predict = torch.tensor(nns)
-
-    _, _, _, path = dtw(view1.cpu(), view2.cpu(), dist='sqeuclidean')
-    _, uix = np.unique(path[0], return_index=True)
-    nns = path[1][uix]
-    predict = torch.tensor(nns)
+    predict_dtw = torch.tensor(nns)
 
     X_padded = pad_matrices([softmaxed_sim_12.cpu()], target_size=256)
     log_reg_sync_offset = log_reg.predict(X_padded)[0]
 
-    logger.debug(f'predict: {predict}')
-
     length1 = ground.size(0)
 
     frames = []
+    dtw_frames = []
 
     for i in range(length1):
         p = predict[i].item()
+        p_dtw = predict_dtw[i].item()
         g = ground[i][0].item()
 
         frame_error = (p - g)
         frames.append(frame_error)
+        dtw_frames.append(p_dtw - g)
 
     logger.debug(f'len(frames): {len(frames)}')
     logger.debug(f'frames: {frames}')
 
     median_frames = np.median(frames)
     mean_frames = np.average(frames)
+    dtw_frames = np.median(dtw_frames)
 
     num_frames_median = math.floor(median_frames)
     num_frames_mean = math.floor(mean_frames)
+    num_frames_dtw = math.floor(dtw_frames)
 
     abs_median = abs(num_frames_median - label)
     abs_mean = abs(num_frames_mean - label)
@@ -350,6 +361,19 @@ def decision_offset(cfg, video0, video1, view1, view2, label, name0, name1, now_
     plt.plot(x_line, y_line, color='red', linestyle='--',
              linewidth=2, label=f'Median')
 
+    # Create a line for dtw
+    k = num_frames_dtw * -1
+    # Create the points for the line with y-intercept k
+    x_line = np.arange(softmaxed_sim_12.shape[1])
+    y_line = x_line + k
+
+    valid_indices = (y_line >= 0) & (y_line < softmaxed_sim_12.shape[0])
+    x_line = x_line[valid_indices]
+    y_line = y_line[valid_indices]
+
+    plt.plot(x_line, y_line, color='yellow', linestyle='--',
+             linewidth=2, label=f'Dtw')
+
     plt.legend()
 
     plt.gca().set_aspect('equal', adjustable='box')
@@ -362,7 +386,7 @@ def decision_offset(cfg, video0, video1, view1, view2, label, name0, name1, now_
     plt.close()
 
     logger.info(
-        f'name0: {name0}, frame_error (median): {num_frames_median - label}, frame_error (log_reg): {log_reg_sync_offset - label}')
+        f'name0: {name0}, frame_error (median): {num_frames_median - label}, frame_error (log_reg): {log_reg_sync_offset - label}, frame_error (dtw): {num_frames_dtw - label}')
 
     return {
         'abs_median': abs_median,
@@ -371,6 +395,8 @@ def decision_offset(cfg, video0, video1, view1, view2, label, name0, name1, now_
         'err_mean': num_frames_mean - label,
         'abs_log_reg': abs(log_reg_sync_offset - label),
         'err_log_reg': log_reg_sync_offset - label,
+        'abs_dtw': abs(num_frames_dtw - label),
+        'err_dtw': num_frames_dtw - label,
     }
 
 
