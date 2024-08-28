@@ -147,9 +147,9 @@ class Pouring(torch.utils.data.Dataset):
             video, _, info = read_video(video_file, pts_unit='sec')
             label = self.dataset[index][f"label_{i}"]
 
-            # Let's take the middle of the video
-            start_offset = 40
-            video = video[start_offset + label:start_offset + 80 + label]
+            start_offset = 0
+            num_frames_to_use = 80
+            video = video[start_offset + label:start_offset + num_frames_to_use + label]
             seq_len = len(video)
             if seq_len == 0:
                 print('seq_len is 0', video_file)

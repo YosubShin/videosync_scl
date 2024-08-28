@@ -232,12 +232,12 @@ def plot_frames(video0, video1, name0, name1, label, predicted, cur_epoch, cur_i
         for j in range(2):
             sync_offset = label if j == 0 else predicted
             if sync_offset >= 0:
-                if i * frame_stride + sync_offset >= len(video1):
+                if i * frame_stride >= len(video0) or i * frame_stride + sync_offset >= len(video1):
                     continue
                 frame1 = video0[i * frame_stride]
                 frame2 = video1[i * frame_stride + sync_offset]
             else:
-                if i * frame_stride + sync_offset < 0:
+                if i * frame_stride + sync_offset < 0 or i * frame_stride < 0:
                     continue
                 frame1 = video0[i * frame_stride]
                 frame2 = video1[i * frame_stride + sync_offset]
