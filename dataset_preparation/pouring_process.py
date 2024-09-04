@@ -31,8 +31,6 @@ def get_video_frame_count(video_file_path):
 
 def main(split="train"):
     data_root = "/home/yosubs/koa_scratch/pouring"
-    output_dir = os.path.join(data_root, "processed_videos")
-    os.makedirs(output_dir, exist_ok=True)
     if split == "train":
         save_file = os.path.join(data_root, f"train.pkl")
     else:
@@ -43,10 +41,13 @@ def main(split="train"):
     labels = [{}, {}]
     num_frames = [{}, {}]
 
+    zero_or_one = 0 if split == "train" else 1
     video_name_prefixes = set()
     for root, _, files in os.walk(video_dir):
         for i, file in enumerate(files):
             if not file.endswith('.mp4'):
+                continue
+            elif i % 2 == zero_or_one:
                 continue
 
             # "creamsoda_to_clear5_real_view_1.mp4" => "creamsoda_to_clear5_real_view_"
@@ -63,7 +64,6 @@ def main(split="train"):
 
         for j, camera_id in enumerate(range(2)):
             video_id = f'{video_name_prefix}{camera_id}'
-            output_file = os.path.join(output_dir, video_id) + ".mp4"
             source_video_path = os.path.join(video_dir, video_id + ".mp4")
 
             local_frame_offset = 0
@@ -83,26 +83,19 @@ def main(split="train"):
                     f'source video file does not exist: {source_video_path}')
                 continue
 
-            if not os.path.exists(output_file):
-                num_frame = get_video_frame_count(source_video_path)
-                high = num_frame - np.random.randint(0, 15)
-                frame_select_filter = f'select=between(n\,{str(local_frame_offset)}\,{str(high)}),setpts=PTS-STARTPTS,'
-
-                cmd = f'ffmpeg -hide_banner -loglevel panic -y -i {source_video_path} -strict -2 -vf "{frame_select_filter}" {output_file}'
-                os.system(cmd)
-
-            video = cv2.VideoCapture(output_file)
+            video = cv2.VideoCapture(source_video_path)
             fps = int(video.get(cv2.CAP_PROP_FPS))
             width = int(video.get(cv2.CAP_PROP_FRAME_WIDTH))
             height = int(video.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-            data_dict[f"video_file_{j}"] = output_file
+            data_dict[f"video_file_{j}"] = source_video_path
             data_dict[f"seq_len_{j}"] = int(
                 video.get(cv2.CAP_PROP_FRAME_COUNT))
             data_dict[f"label_{j}"] = local_frame_offset
 
         if "video_file_0" not in data_dict or "video_file_1" not in data_dict:
-            print(f"Skipping the entry because we are missing some keys. name: {video_name_prefix}, data_dict.keys(): {data_dict.keys()}")
+            print(
+                f"Skipping the entry because we are missing some keys. name: {video_name_prefix}, data_dict.keys(): {data_dict.keys()}")
             continue
 
         dataset.append(data_dict)
@@ -112,5 +105,5 @@ def main(split="train"):
 
 
 if __name__ == '__main__':
-    # main(split="train")
+    main(split="train")
     main(split="val")
