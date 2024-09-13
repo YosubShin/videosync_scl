@@ -40,8 +40,11 @@ class SyncOffset(object):
         self.cur_iter = None
         self.sample = None
 
-        with open('logistic_regression_model.pkl', 'rb') as file:
-            self.log_reg = pickle.load(file)
+        try:
+            with open('logistic_regression_model.pkl', 'rb') as file:
+                self.log_reg = pickle.load(file)
+        except:
+            logger.info("failed to open logistic_regression_model.pkl")
 
     def evaluate(self, model, train_loader, val_loader, cur_epoch, summary_writer, sample=False, cur_iter=None):
         model.eval()

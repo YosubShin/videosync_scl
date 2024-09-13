@@ -47,7 +47,9 @@ def main(split="train"):
         for i, file in enumerate(files):
             if not file.endswith('.mp4'):
                 continue
-            elif i % 2 == zero_or_one:
+            elif (i % 4 == 0 or i % 4 == 1 or i % 4 == 2) and split == "val":
+                continue
+            elif (i % 4 == 3) and split == "train":
                 continue
 
             # "creamsoda_to_clear5_real_view_1.mp4" => "creamsoda_to_clear5_real_view_"

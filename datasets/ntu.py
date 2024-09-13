@@ -28,7 +28,7 @@ class Ntu(torch.utils.data.Dataset):
             self.mode = mode
         self.num_contexts = cfg.DATA.NUM_CONTEXTS
 
-        self.dataset_name = 'ntu' if 'ntu' in cfg.DATASETS else 'cvid'
+        self.dataset_name = cfg.DATASETS[0]
 
         self.train_dataset = os.path.join(
             cfg.args.workdir, self.dataset_name, f"train.pkl")
@@ -80,6 +80,9 @@ class Ntu(torch.utils.data.Dataset):
                 print('seq_len is 0', video_file)
             # T H W C -> T C H W, [0,1] tensor
             video = video.permute(0, 3, 1, 2).float() / 255.0
+
+            # if i == 1:
+            #     video = torch.rand(video.shape)
 
             steps = torch.arange(0, seq_len, self.cfg.DATA.SAMPLE_ALL_STRIDE)
             video = video[steps.long()]

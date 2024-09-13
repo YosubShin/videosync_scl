@@ -104,6 +104,7 @@ def main():
     val_loader, val_emb_loader = construct_dataloader(cfg, "val")
 
     with torch.no_grad():
+        # XXX: 'train' split is broken for some reason. I had to hack it by hard-coding the [split].pkl in the dataloader code.
         # save_similarity_and_labels(cfg, model, train_emb_loader, 'train')
         save_similarity_and_labels(cfg, model, val_loader, 'val')
 
