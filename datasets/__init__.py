@@ -139,7 +139,7 @@ def construct_dataloader(cfg, split, mode="auto"):
             val_sampler = torch.utils.data.distributed.DistributedSampler(
                 val_dataset) if cfg.NUM_GPUS > 1 else None
             val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=1, shuffle=False,
-                                                     num_workers=cfg.DATA.NUM_WORKERS, pin_memory=True, sampler=None,
+                                                     num_workers=cfg.DATA.NUM_WORKERS, pin_memory=True, sampler=val_sampler,
                                                      drop_last=True)
             val_eval_dataset = Ntu(
                 cfg, split, mode="eval")

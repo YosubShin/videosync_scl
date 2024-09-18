@@ -72,20 +72,9 @@ def train(cfg, train_loader, model, optimizer, scheduler, algo, cur_epoch, summa
     for cur_iter, (videos, _labels, seq_lens, chosen_steps, video_masks, names) in enumerate(train_loader):
         logger.debug(f'cur_iter: {cur_iter}, name: {names[0]}')
 
-        if du.is_root_proc() and cur_iter % 500 == 0:
-            if cur_iter == 0:
-                sync_offset_res = sync_offset.evaluate(
-                    model, train_loader, val_loader, cur_epoch, summary_writer, sample=False, cur_iter=cur_iter)
-            else:
-                sync_offset_res = sync_offset.evaluate(
-                    model, train_loader, val_loader, cur_epoch, summary_writer, sample=True, cur_iter=cur_iter)
-                logger.info('done running sync_offset.evaluate()')
-
-                wandb.log({
-                    "median_abs_frame_error_sampled": sync_offset_res['median_abs_frame_error'],
-                    "median_abs_frame_error_std_dev_sampled": sync_offset_res['median_abs_frame_error_std_dev'],
-                    "median_abs_frame_error_moe_sampled": sync_offset_res['median_abs_frame_error_moe'],
-                })
+        if cur_iter % 500 == 0:
+            sync_offset_res = sync_offset.evaluate(
+                model, train_loader, val_loader, cur_epoch, summary_writer, sample=True, cur_iter=cur_iter)
 
             model.train()
 
@@ -170,7 +159,6 @@ def train(cfg, train_loader, model, optimizer, scheduler, algo, cur_epoch, summa
             prof.export_chrome_trace(profiler_output_path)
 
         if du.is_root_proc() and cur_iter % cfg.LOGGING.REPORT_INTERVAL == 0:
-            print(names)
             logger.info(
                 f"iter {data_size * cur_epoch + cur_iter}, training loss: {loss.item():.3f}")
             visual_video = videos[0]
@@ -316,6 +304,9 @@ def main():
     cfg.TRAIN.MAX_ITERS = cfg.TRAIN.MAX_EPOCHS * len(train_loader)
     scheduler = construct_scheduler(optimizer, cfg)
 
+    from evaluation.sync_offset import SyncOffset
+    sync_offset = SyncOffset(cfg)
+    
     for cur_epoch in range(start_epoch, cfg.TRAIN.MAX_EPOCHS):
         logger.info(
             f"Traning epoch {cur_epoch}/{cfg.TRAIN.MAX_EPOCHS}, {len(train_loader)} iters each epoch")
@@ -328,13 +319,10 @@ def main():
                 from evaluate_finegym import evaluate_once
                 evaluate_once(cfg, model, train_loader, val_loader, train_emb_loader, val_emb_loader,
                               iterator_tasks, embedding_tasks, cur_epoch, summary_writer)
-            elif du.is_root_proc():
-                from evaluate import evaluate_once
-                logger.info(f'in root_proc, running evaluate_once')
-                evaluate_once(cfg, model, train_loader, val_loader, train_emb_loader, val_emb_loader,
-                              iterator_tasks, embedding_tasks, cur_epoch, summary_writer)
+            else:
+                sync_offset_res = sync_offset.evaluate(
+                    model, train_loader, val_loader, cur_epoch, summary_writer, sample=False, cur_iter=0)
                 model.train()
-                logger.info(f'in root_proc, done running evaluate_once')
         if du.is_root_proc() and ((cur_epoch+1) % cfg.CHECKPOINT.SAVE_INTERVAL == 0 or cur_epoch == cfg.TRAIN.MAX_EPOCHS-1):
             logger.info('in root_proc, running save_checkpoint')
             save_checkpoint(cfg, model, optimizer, cur_epoch)
