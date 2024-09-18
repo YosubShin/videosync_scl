@@ -78,7 +78,7 @@ def are_frames_similar_ssim(frame1, frame2, similarity_threshold):
     return score > similarity_threshold
 
 
-def detect_static_video(video_path, start_frame, end_frame, frame_skip=3, similarity_threshold=0.95, similarity_ratio=0.9):
+def detect_static_video(video_path, start_frame, end_frame, frame_skip=12, similarity_threshold=0.90, similarity_ratio=0.9):
     """Detect if the video has mostly similar frames, indicating a static or non-changing video."""
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
@@ -187,7 +187,7 @@ def process_event(event_dir, output_dir, event_id, k, max_offset):
         total_frames2 = int(video2.get(cv2.CAP_PROP_FRAME_COUNT))
 
         min_total_frames = min(total_frames1, total_frames2)
-        sample_frame_size = 120  # 120 frames for each sample
+        sample_frame_size = 480
 
         safe_margin = max_offset
 
@@ -298,7 +298,7 @@ def main(data_root, output_dir, k=5, max_offset=30):
     signal.signal(signal.SIGINT, signal_handler)
 
     # Use a multiprocessing pool with a fixed number of CPUs
-    pool = multiprocessing.Pool(processes=16)
+    pool = multiprocessing.Pool(processes=30)
 
     pbar = tqdm(total=0, desc="Processing all events", dynamic_ncols=True)
 
