@@ -141,12 +141,12 @@ def construct_dataloader(cfg, split, mode="auto"):
             val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=1, shuffle=False,
                                                      num_workers=cfg.DATA.NUM_WORKERS, pin_memory=True, sampler=val_sampler,
                                                      drop_last=True)
-            val_eval_dataset = Ntu(
-                cfg, split, mode="eval")
+            val_eval_dataset = Ntu(cfg, split, mode="eval", sample_all=True)
             val_eval_sampler = torch.utils.data.distributed.DistributedSampler(
                 val_eval_dataset) if cfg.NUM_GPUS > 1 else None
             val_eval_loader = [torch.utils.data.DataLoader(val_eval_dataset, batch_size=1, shuffle=False,
-                                                           num_workers=cfg.DATA.NUM_WORKERS, pin_memory=True, sampler=val_eval_sampler)]
+                                                           num_workers=cfg.DATA.NUM_WORKERS, pin_memory=True, sampler=val_eval_sampler,
+                                                           drop_last=True)]
         else:
             from datasets.penn_action import PennAction, ActionBatchSampler
             val_dataset = PennAction(cfg, split, mode="eval")

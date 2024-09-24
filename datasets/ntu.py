@@ -18,7 +18,7 @@ logger.setLevel(INFO)
 
 
 class Ntu(torch.utils.data.Dataset):
-    def __init__(self, cfg, split, mode="auto"):
+    def __init__(self, cfg, split, mode="auto", sample_all=False):
         assert split in ["train", "val"]
         self.cfg = cfg
         self.split = split
@@ -26,6 +26,7 @@ class Ntu(torch.utils.data.Dataset):
             self.mode = "train" if self.split == "train" else "eval"
         else:
             self.mode = mode
+        self.sample_all = sample_all
         self.num_contexts = cfg.DATA.NUM_CONTEXTS
 
         self.dataset_name = cfg.DATASETS[0]
@@ -58,7 +59,7 @@ class Ntu(torch.utils.data.Dataset):
         return len(self.dataset)
 
     def __getitem__(self, index):
-        if self.cfg.SSL and self.mode == "train":
+        if self.cfg.SSL and (self.mode == "train" or not self.sample_all):
             # return self.get_supervised_training_item(index)
             return self.get_training_item(index)
 

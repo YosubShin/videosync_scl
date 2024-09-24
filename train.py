@@ -46,7 +46,7 @@ signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 
 
-def train(cfg, train_loader, model, optimizer, scheduler, algo, cur_epoch, summary_writer, val_loader, iterator_tasks):
+def train(cfg, train_loader, model, optimizer, scheduler, algo, cur_epoch, summary_writer, val_loader, val_emb_loader, iterator_tasks):
     global prof
 
     model.train()
@@ -74,7 +74,7 @@ def train(cfg, train_loader, model, optimizer, scheduler, algo, cur_epoch, summa
 
         if cur_iter % 500 == 0:
             sync_offset_res = sync_offset.evaluate(
-                model, train_loader, val_loader, cur_epoch, summary_writer, sample=True, cur_iter=cur_iter)
+                model, val_loader, val_emb_loader, cur_epoch, summary_writer, sample=True, cur_iter=cur_iter, algo=algo)
 
             model.train()
 
@@ -306,12 +306,12 @@ def main():
 
     from evaluation.sync_offset import SyncOffset
     sync_offset = SyncOffset(cfg)
-    
+
     for cur_epoch in range(start_epoch, cfg.TRAIN.MAX_EPOCHS):
         logger.info(
             f"Traning epoch {cur_epoch}/{cfg.TRAIN.MAX_EPOCHS}, {len(train_loader)} iters each epoch")
         train(cfg, train_loader, model, optimizer, scheduler, algo,
-              cur_epoch, summary_writer, val_loader, iterator_tasks)
+              cur_epoch, summary_writer, val_loader, val_emb_loader, iterator_tasks)
         logger.info(f'done training cur_epoch: {cur_epoch}')
         if (cur_epoch+1) % cfg.EVAL.VAL_INTERVAL == 0 or cur_epoch == cfg.TRAIN.MAX_EPOCHS-1:
             # val(cfg, val_loader, model, algo, cur_epoch, summary_writer)
@@ -321,7 +321,7 @@ def main():
                               iterator_tasks, embedding_tasks, cur_epoch, summary_writer)
             else:
                 sync_offset_res = sync_offset.evaluate(
-                    model, train_loader, val_loader, cur_epoch, summary_writer, sample=False, cur_iter=0)
+                    model, val_loader, val_emb_loader, cur_epoch, summary_writer, sample=False, cur_iter=0, algo=algo)
                 model.train()
         if du.is_root_proc() and ((cur_epoch+1) % cfg.CHECKPOINT.SAVE_INTERVAL == 0 or cur_epoch == cfg.TRAIN.MAX_EPOCHS-1):
             logger.info('in root_proc, running save_checkpoint')

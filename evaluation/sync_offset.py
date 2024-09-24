@@ -21,6 +21,7 @@ from eval_sync_offset_detector import pad_matrices
 import utils.distributed as du
 import torch.distributed as dist
 from tqdm import tqdm
+from datasets import unnorm
 
 logger = logging.get_logger(__name__)
 
@@ -47,7 +48,7 @@ def gather_and_compute_statistics(local_values, method_name):
     if dist.get_rank() == 0:
         # Flatten the gathered lists
         all_values = [item for sublist in gathered_values for item in sublist]
-        
+
         # Compute the statistics
         mean_value = np.mean(all_values)
         std_dev_value = np.std(all_values)
@@ -60,6 +61,45 @@ def gather_and_compute_statistics(local_values, method_name):
         }
     else:
         return None
+
+
+def val(cfg, val_loader, model, algo, cur_epoch, summary_writer):
+    model.eval()
+    data_size = len(val_loader)
+    total_loss = {}
+
+    with torch.no_grad():
+        for cur_iter, (videos, labels, seq_lens, chosen_steps, video_masks, names) in enumerate(val_loader):
+            if cfg.USE_AMP:
+                with torch.cuda.amp.autocast():
+                    loss_dict = algo.compute_loss(
+                        model, videos, seq_lens, chosen_steps, video_masks, training=False)
+            else:
+                loss_dict = algo.compute_loss(
+                    model, videos, seq_lens, chosen_steps, video_masks, training=False)
+
+            for key in loss_dict:
+                loss_dict[key][torch.isnan(loss_dict[key])] = 0
+                if key not in total_loss:
+                    total_loss[key] = 0
+                total_loss[key] += du.all_reduce([loss_dict[key]]
+                                                 )[0].item() / data_size
+
+        if cfg.NUM_GPUS == 1:
+            print(names)
+            visual_video = videos[0]
+            if cfg.SSL:
+                for i, v in enumerate(visual_video):
+                    summary_writer.add_video(
+                        f'{names}_view{i}', unnorm(v[::2]).unsqueeze(0), 0, fps=4)
+            else:
+                summary_writer.add_video(f'{names}', unnorm(
+                    visual_video[::2]).unsqueeze(0), 0, fps=4)
+
+    for key in total_loss:
+        summary_writer.add_scalar(f'val/{key}', total_loss[key], cur_epoch)
+    logger.info("epoch {}, val loss: {:.3f}".format(
+        cur_epoch, total_loss["loss"]))
 
 
 class SyncOffset(object):
@@ -78,34 +118,34 @@ class SyncOffset(object):
                 self.log_reg = pickle.load(file)
         except:
             logger.info("failed to open logistic_regression_model.pkl")
-            
-    
-    def evaluate(self, model, train_loader, val_loader, cur_epoch, summary_writer, sample=False, cur_iter=None):
+
+    def evaluate(self, model, val_loader, val_emb_loader, cur_epoch, summary_writer, sample=False, cur_iter=None, algo=None):
         model.eval()
-    
+
         now = datetime.now()
         self.now_str = now.strftime("%Y-%m-%d_%H_%M_%S")
         self.cur_epoch = cur_epoch
         self.cur_iter = cur_iter
         self.sample = sample
-    
+
         # Initialize lists for storing local GPU metrics for each method
         error_methods = ['median', 'mean', 'log_reg', 'dtw']
         local_error_metrics = {method: [] for method in error_methods}
-    
+
         # Padding value for int32 (max integer value)
         padding_value = torch.iinfo(torch.int32).max
-    
+
         # Set up the progress bar for rank 0 (root process)
         if dist.get_rank() == 0:
-            progress_bar = tqdm(total=len(val_loader), desc=f'Evaluating Epoch {cur_epoch}', position=0)
-    
+            progress_bar = tqdm(total=len(val_emb_loader),
+                                desc=f'Evaluating Epoch {cur_epoch}', position=0)
+
         with torch.no_grad():
             count = 0
-            for videos, labels, seq_lens, chosen_steps, video_masks, names in val_loader:
-                if sample and count / len(val_loader) > sample_rate:
+            for videos, labels, seq_lens, chosen_steps, video_masks, names in val_emb_loader:
+                if sample and count / len(val_emb_loader) > sample_rate:
                     break
-    
+
                 embs = []
                 for i in [0, 1]:
                     video = videos[i]
@@ -113,61 +153,65 @@ class SyncOffset(object):
                     chosen_step = chosen_steps[i]
                     video_mask = video_masks[i]
                     name = names[i]
-    
+
                     emb = self.get_embs(
                         model, video, labels[i], seq_len, chosen_step, video_mask, name)
                     embs.append(emb)
-    
+
                 # Calculate synchronization errors for different methods
                 abs_frame_error_dict = self.get_sync_offset(
                     videos[0], videos[1], embs[0], labels[0], embs[1], labels[1], names[0][0], names[1][0])
-    
+
                 # Store local metrics for each method as integers
                 for method in error_methods:
-                    local_error_metrics[method].append(int(abs_frame_error_dict[f'abs_{method}'].item()))
-    
+                    local_error_metrics[method].append(
+                        int(abs_frame_error_dict[f'abs_{method}'].item()))
+
                 count += 1
-    
+
                 # Update progress bar on rank 0
                 if dist.get_rank() == 0:
                     progress_bar.update(1)
-    
+
         # Close progress bar when done
         if dist.get_rank() == 0:
             progress_bar.close()
-    
+
         # Convert the local metrics into tensors (each method needs its own tensor)
         gathered_metrics = {}
         for method in error_methods:
             # Convert local metrics to tensor with dtype=int32
-            local_tensor = torch.tensor(local_error_metrics[method], device='cuda', dtype=torch.int32)
-    
+            local_tensor = torch.tensor(
+                local_error_metrics[method], device='cuda', dtype=torch.int32)
+
             # Find the maximum length of metrics to make sure tensors can be gathered
             local_len = torch.tensor([len(local_tensor)], device='cuda')
             max_len = torch.zeros(1, device='cuda', dtype=torch.int32)
             dist.all_reduce(local_len, op=dist.ReduceOp.MAX)
             max_len = local_len.item()
-    
+
             # Pad the tensor if necessary using the max int value as the padding value
             if local_tensor.size(0) < max_len:
-                padding = torch.full((max_len - local_tensor.size(0),), padding_value, dtype=torch.int32, device='cuda')
+                padding = torch.full(
+                    (max_len - local_tensor.size(0),), padding_value, dtype=torch.int32, device='cuda')
                 local_tensor = torch.cat([local_tensor, padding])
-    
+
             # Create a tensor to store gathered data from all processes
-            gathered_tensor = [torch.zeros(max_len, dtype=torch.int32, device='cuda') for _ in range(dist.get_world_size())]
-    
+            gathered_tensor = [torch.zeros(
+                max_len, dtype=torch.int32, device='cuda') for _ in range(dist.get_world_size())]
+
             # Perform all_gather to collect metrics from all processes
             dist.all_gather(gathered_tensor, local_tensor)
-    
+
             # Only on rank 0, gather and process the results
             if dist.get_rank() == 0:
                 # Flatten the gathered tensors into a single list
                 all_metrics = torch.cat(gathered_tensor).cpu().numpy().tolist()
-    
+
                 # Remove padding (ignore values that were padded with the max int value)
                 all_metrics = [x for x in all_metrics if x != padding_value]
                 gathered_metrics[method] = all_metrics
-    
+
         # On the root process (rank 0), aggregate the gathered metrics
         if dist.get_rank() == 0:
             # Calculate statistics (e.g., mean, std) for each method
@@ -177,9 +221,10 @@ class SyncOffset(object):
                 aggregated_metrics[method] = {
                     'mean': np.mean(metrics),
                     'std_dev': np.std(metrics),
-                    'moe': calculate_margin_of_error(metrics)  # Assuming this is a defined function
+                    # Assuming this is a defined function
+                    'moe': calculate_margin_of_error(metrics)
                 }
-    
+
             # Log the metrics using wandb
             wandb_metrics = {}
             metric_postfix = "_sampled" if sample else ""
@@ -190,14 +235,15 @@ class SyncOffset(object):
                     f"{method}_abs_frame_error_moe{metric_postfix}": aggregated_metrics[method]['moe']
                 })
             wandb.log(wandb_metrics)
-    
+
+        val(self.cfg, val_loader, model, algo, cur_epoch, summary_writer)
+
         # Ensure all processes are synchronized
         dist.barrier()
-    
+
         # Return the gathered results on rank 0 for logging or other purposes
         if dist.get_rank() == 0:
             return aggregated_metrics
-
 
     def get_sync_offset(self, video0, video1, embs0, label0, embs1, label1, name0, name1):
         return decision_offset(self.cfg, video0, video1, torch.tensor(embs0).cuda(), torch.tensor(embs1).cuda(), label0 - label1, name0, name1, self.now_str, self.cur_epoch, self.cur_iter, self.sample, self.log_reg)
