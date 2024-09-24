@@ -16,6 +16,8 @@ from logging import INFO
 logger = logging.get_logger(__name__)
 logger.setLevel(INFO)
 
+# prefix = "/home/yosubs/koa_scratch/ntu/"
+prefix = ""
 
 class Ntu(torch.utils.data.Dataset):
     def __init__(self, cfg, split, mode="auto", sample_all=False):
@@ -74,7 +76,7 @@ class Ntu(torch.utils.data.Dataset):
             name = self.dataset[index][f"video_file_{i}"].split(
                 "/")[-1].split(".")[0]
             video_file = os.path.join(
-                self.cfg.args.workdir, self.dataset_name, self.dataset[index][f"video_file_{i}"])
+                self.cfg.args.workdir, self.dataset_name, self.dataset[index][f"video_file_{i}"][len(prefix):])
             video, _, info = read_video(video_file, pts_unit='sec')
             seq_len = len(video)
             if seq_len == 0:
@@ -113,8 +115,10 @@ class Ntu(torch.utils.data.Dataset):
         # XXX: Take the first video from the pair of videos. We will figure out how to utilize the second videos later.
         name = self.dataset[index][f"video_file_0"].split(
             "/")[-1].split(".")[0]
+
+
         video_file = os.path.join(
-            self.cfg.args.workdir, self.dataset_name, self.dataset[index][f"video_file_0"])
+            self.cfg.args.workdir, self.dataset_name, self.dataset[index][f"video_file_0"][len(prefix):])
         video, _, info = read_video(video_file, pts_unit='sec')
         # T H W C -> T C H W, [0,1] tensor
         video = video.permute(0, 3, 1, 2).float() / 255.0
@@ -157,7 +161,7 @@ class Ntu(torch.utils.data.Dataset):
             name = self.dataset[index][f"video_file_{i}"].split(
                 "/")[-1].split(".")[0]
             video_file = os.path.join(
-                self.cfg.args.workdir, self.dataset_name, self.dataset[index][f"video_file_{i}"])
+                self.cfg.args.workdir, self.dataset_name, self.dataset[index][f"video_file_{i}"][len(prefix):])
             video, _, info = read_video(video_file, pts_unit='sec')
             # T H W C -> T C H W, [0,1] tensor
             video = video.permute(0, 3, 1, 2).float() / 255.0

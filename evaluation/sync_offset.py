@@ -63,13 +63,17 @@ def gather_and_compute_statistics(local_values, method_name):
         return None
 
 
-def val(cfg, val_loader, model, algo, cur_epoch, summary_writer):
+def val(cfg, val_loader, model, algo, cur_epoch, summary_writer, sample):
     model.eval()
     data_size = len(val_loader)
     total_loss = {}
 
     with torch.no_grad():
+        count = 0
         for cur_iter, (videos, labels, seq_lens, chosen_steps, video_masks, names) in enumerate(val_loader):
+            if sample and count / len(val_loader) > sample_rate:
+                break
+
             if cfg.USE_AMP:
                 with torch.cuda.amp.autocast():
                     loss_dict = algo.compute_loss(
@@ -100,6 +104,10 @@ def val(cfg, val_loader, model, algo, cur_epoch, summary_writer):
         summary_writer.add_scalar(f'val/{key}', total_loss[key], cur_epoch)
     logger.info("epoch {}, val loss: {:.3f}".format(
         cur_epoch, total_loss["loss"]))
+
+    wandb.log({
+        "val/loss": total_loss["loss"],
+    })
 
 
 class SyncOffset(object):
@@ -230,13 +238,13 @@ class SyncOffset(object):
             metric_postfix = "_sampled" if sample else ""
             for method in error_methods:
                 wandb_metrics.update({
-                    f"{method}_abs_frame_error_mean{metric_postfix}": aggregated_metrics[method]['mean'],
-                    f"{method}_abs_frame_error_std_dev{metric_postfix}": aggregated_metrics[method]['std_dev'],
-                    f"{method}_abs_frame_error_moe{metric_postfix}": aggregated_metrics[method]['moe']
+                    f"{method}/abs_frame_error_mean{metric_postfix}": aggregated_metrics[method]['mean'],
+                    f"{method}/abs_frame_error_std_dev{metric_postfix}": aggregated_metrics[method]['std_dev'],
+                    f"{method}/abs_frame_error_moe{metric_postfix}": aggregated_metrics[method]['moe']
                 })
             wandb.log(wandb_metrics)
 
-        val(self.cfg, val_loader, model, algo, cur_epoch, summary_writer)
+        val(self.cfg, val_loader, model, algo, cur_epoch, summary_writer, sample)
 
         # Ensure all processes are synchronized
         dist.barrier()

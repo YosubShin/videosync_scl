@@ -292,7 +292,7 @@ def main():
 
     # Setup Dataset Iterators from train and val datasets.
     train_loader, train_emb_loader = construct_dataloader(cfg, "train")
-    val_loader, val_emb_loader = construct_dataloader(cfg, "val")
+    val_loader, [val_emb_loader] = construct_dataloader(cfg, "val")
     iterator_tasks, embedding_tasks = get_tasks(cfg)
 
     if cfg.USE_AMP:
