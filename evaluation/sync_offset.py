@@ -89,6 +89,8 @@ def val(cfg, val_loader, model, algo, cur_epoch, summary_writer, sample):
                 total_loss[key] += du.all_reduce([loss_dict[key]]
                                                  )[0].item() / data_size
 
+            count += 1
+
         if cfg.NUM_GPUS == 1:
             print(names)
             visual_video = videos[0]
