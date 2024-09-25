@@ -36,7 +36,7 @@ EVAL:
     - 5
     - 10
     - 15
-  NUM_FRAMES: 360
+  NUM_FRAMES: 240
   TASKS:
     - sync_offset
   VAL_INTERVAL: 2
@@ -99,5 +99,5 @@ SCL:
 TRAIN:
   BATCH_SIZE: 1
   MAX_EPOCHS: 310
-  NUM_FRAMES: 360
+  NUM_FRAMES: 240
 TRAINING_ALGO: scl
