@@ -108,7 +108,7 @@ def val(cfg, val_loader, model, algo, cur_epoch, summary_writer, sample):
         cur_epoch, total_loss["loss"]))
 
     wandb.log({
-        "val/loss": total_loss["loss"],
+        f"val/loss{'_sampled' if sample else ''}": total_loss["loss"],
     })
 
 
