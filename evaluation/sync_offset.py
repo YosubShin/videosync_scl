@@ -171,6 +171,10 @@ class SyncOffset(object):
         # Padding value for int32 (max integer value)
         padding_value = torch.iinfo(torch.int32).max
 
+        # Define the CSV file path to store the raw frame errors
+        csv_file_name = f"evaluation_results_epoch_{cur_epoch}_iter_{self.cur_iter}.csv"
+        csv_file_path = os.path.join(self.cfg.LOGDIR, "eval_logs", csv_file_name)
+
         # Set up the progress bar for rank 0 (root process)
         if dist.get_rank() == 0:
             progress_bar = tqdm(
@@ -221,6 +225,37 @@ class SyncOffset(object):
                 for method in error_methods:
                     local_error_metrics[method].append(
                         int(abs_frame_error_dict[f"abs_{method}"].item())
+                    )
+
+                # Check if the csv file already exists
+                csv_file_exists = os.path.exists(csv_file_path)
+                # Open the CSV file in append mode so we don't overwrite previous results
+                with open(csv_file_path, mode="a", newline="") as csv_file:
+                    csv_writer = csv.writer(csv_file)
+
+                    if not csv_file_exists:
+                        csv_writer.writerow(
+                            [
+                                "Video1",
+                                "Video2",
+                                "Label",
+                                "Median_Frame_Error",
+                                "Mean_Frame_Error",
+                                "LogReg_Frame_Error",
+                                "DTW_Frame_Error",
+                            ]
+                        )
+
+                    csv_writer.writerow(
+                        [
+                            names[0][0],
+                            names[1][0],
+                            labels[0].item() - labels[1].item(),
+                            int(abs_frame_error_dict["err_median"].item()),
+                            int(abs_frame_error_dict["err_mean"].item()),
+                            int(abs_frame_error_dict["err_log_reg"].item()),
+                            int(abs_frame_error_dict["err_dtw"].item()),
+                        ]
                     )
 
                 count += 1
@@ -622,8 +657,8 @@ def decision_offset(
 
     return {
         "abs_median": abs_median,
-        "abs_mean": abs_mean,
         "err_median": num_frames_median - label,
+        "abs_mean": abs_mean,
         "err_mean": num_frames_mean - label,
         "abs_log_reg": abs(log_reg_sync_offset - label),
         "err_log_reg": log_reg_sync_offset - label,
