@@ -31,3 +31,4 @@ timm==0.3.2
 yacs==0.1.8
 youtube-dl==2021.12.17
 wandb==0.17.0
+scikit-image==0.19.3
