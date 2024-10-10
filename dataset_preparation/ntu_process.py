@@ -53,6 +53,11 @@ def main(split="train"):
 
     for i, event_id in tqdm(enumerate(event_ids), total=len(event_ids)):
         data_dict = {"id": i, "name": event_id}
+        
+        # Pick shorter duration among two videos (while taking into account the frame offset),
+        # So that end processed video pair have the same video duration.
+        # This is need to prevent information leak from the difference in video duration.
+        num_frame = min(num_frames[0][event_id] - labels[0][event_id], num_frames[1][event_id] - labels[1][event_id])
         for j, camera_id in enumerate(['001', '002']):
             video_id = f'{event_id[:5]}{camera_id}{event_id[8:]}'
             output_file = os.path.join(output_dir, video_id) + ".mp4"
@@ -66,9 +71,7 @@ def main(split="train"):
                     continue
 
                 frame_offset = labels[j][event_id]
-
-                num_frame = num_frames[j][event_id]
-                high = num_frame - np.random.randint(0, 15)
+                high = frame_offset + num_frame
                 frame_select_filter = f'select=between(n\,{str(frame_offset)}\,{str(high)}),setpts=PTS-STARTPTS,'
 
                 cmd = f'ffmpeg -hide_banner -loglevel panic -y -i {video_file} -strict -2 -vf "{frame_select_filter}scale=224:224,setdar=1:1" -r 30 {output_file}'
