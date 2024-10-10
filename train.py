@@ -161,14 +161,6 @@ def train(cfg, train_loader, model, optimizer, scheduler, algo, cur_epoch, summa
         if du.is_root_proc() and cur_iter % cfg.LOGGING.REPORT_INTERVAL == 0:
             logger.info(
                 f"iter {data_size * cur_epoch + cur_iter}, training loss: {loss.item():.3f}")
-            visual_video = videos[0]
-            if cfg.SSL:
-                for i, v in enumerate(visual_video):
-                    summary_writer.add_video(f'{names[0]}_view{i}', unnorm(
-                        v[::cfg.DATA.NUM_CONTEXTS]).unsqueeze(0), 0, fps=4)
-            else:
-                summary_writer.add_video(f'{names[0]}', unnorm(
-                    visual_video[::cfg.DATA.NUM_CONTEXTS]).unsqueeze(0), 0, fps=4)
 
         wandb.log({
             "loss": loss,
