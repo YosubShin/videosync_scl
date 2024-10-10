@@ -443,7 +443,7 @@ def plot_frames(
     )
 
     fig.text(0.05, 0.8, f"label: {label.item()}", ha="center", fontsize=14)
-    fig.text(0.05, 0.3, f"predicted: {predicted.item()}", ha="center", fontsize=14)
+    fig.text(0.05, 0.3, f"predicted: {predicted}", ha="center", fontsize=14)
 
     for i in range(num_frames):
         for j in range(2):
@@ -456,7 +456,9 @@ def plot_frames(
                 frame1 = video0[i * frame_stride]
                 frame2 = video1[i * frame_stride + sync_offset]
             else:
-                if i * frame_stride + sync_offset < 0 or i * frame_stride < 0:
+                if i * frame_stride >= len(
+                    video0
+                ) or i * frame_stride + sync_offset < 0 or i * frame_stride < 0:
                     continue
                 frame1 = video0[i * frame_stride]
                 frame2 = video1[i * frame_stride + sync_offset]
@@ -558,7 +560,7 @@ def decision_offset(
         name0,
         name1,
         label,
-        log_reg_sync_offset,
+        num_frames_median,
         cur_epoch,
         cur_iter,
         cfg,
