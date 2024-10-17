@@ -48,6 +48,8 @@ def save_similarity_and_labels(cfg, model, loader, dataset_type):
         all_similarity_matrices.append(softmaxed_similarity_matrix)
         all_labels.append((labels[0] - labels[1]).item())
 
+    # dataset_type = 'train'
+
     # Save data only from the main process
     if torch.distributed.get_rank() == 0:
         np.save(f'{dataset_type}_softmaxed_sim_12.npy',
@@ -99,14 +101,11 @@ def main():
     start_epoch = load_checkpoint(cfg, model, optimizer)
 
     # Setup Dataset Iterators from train and val datasets.
-    train_loader, train_emb_loader = construct_dataloader(
-        cfg, "train", mode="eval")
-    val_loader, val_emb_loader = construct_dataloader(cfg, "val")
+    _, [val_emb_loader] = construct_dataloader(cfg, "val")
 
     with torch.no_grad():
         # XXX: 'train' split is broken for some reason. I had to hack it by hard-coding the [split].pkl in the dataloader code.
-        # save_similarity_and_labels(cfg, model, train_emb_loader, 'train')
-        save_similarity_and_labels(cfg, model, val_loader, 'val')
+        save_similarity_and_labels(cfg, model, val_emb_loader, 'val')
 
 
 if __name__ == '__main__':

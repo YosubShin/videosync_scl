@@ -15,3 +15,6 @@ run_aml.py
 
 # wandb
 wandb/
+
+# generated files
+*.npy
