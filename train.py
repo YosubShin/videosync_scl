@@ -263,6 +263,8 @@ def main():
     logger.info("Train with config:")
     logger.info(pprint.pformat(cfg))
 
+    wandb.init(project="videosync_scl", sync_tensorboard=True, config=cfg)
+
     # Build the video model
     model = build_model(cfg)
     torch.cuda.set_device(args.local_rank)
@@ -328,6 +330,5 @@ def main():
 
 if __name__ == '__main__':
     wandb.require("service")
-    wandb.init(project="videosync_scl", sync_tensorboard=True)
     main()
     wandb.finish()
