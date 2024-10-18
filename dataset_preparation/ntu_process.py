@@ -8,7 +8,7 @@ import numpy as np
 
 
 def main(split="train"):
-    data_root = "/home/yosubs/koa_scratch/ntu"
+    data_root = "/data/ntu"
     output_dir = os.path.join(data_root, "processed_videos")
     os.makedirs(output_dir, exist_ok=True)
     if split == "train":
@@ -71,8 +71,7 @@ def main(split="train"):
                     continue
 
                 frame_offset = labels[j][event_id]
-                high = frame_offset + num_frame
-                frame_select_filter = f'select=between(n\,{str(frame_offset)}\,{str(high)}),setpts=PTS-STARTPTS,'
+                frame_select_filter = f'select=gte(n\,{str(frame_offset)}),setpts=PTS-STARTPTS,'
 
                 cmd = f'ffmpeg -hide_banner -loglevel panic -y -i {video_file} -strict -2 -vf "{frame_select_filter}scale=224:224,setdar=1:1" -r 30 {output_file}'
                 os.system(cmd)
