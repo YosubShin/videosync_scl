@@ -236,7 +236,7 @@ def process_event(event_dir, output_dir, event_id, k, max_offset):
 
 
 def sync_and_save_video_pair(video1_path, video2_path, start_frame, end_frame, offset, video1_output_path, video2_output_path,
-                             frame_skip=12, green_threshold=0.8, black_threshold=0.8, 
+                             frame_skip=5, green_threshold=0.8, black_threshold=0.8, 
                              similarity_threshold=0.9, similar_frames_ratio_threshold=0.8, min_frames_for_similarity_check=10):
     """Open video files, synchronize, detect bad frames, and save to output videos."""
     cap1 = cv2.VideoCapture(video1_path)
@@ -396,8 +396,8 @@ def main(data_root, output_dir, k=5, max_offset=30):
     # Shuffle the processed_data before splitting
     random.shuffle(processed_data)
 
-    # Split the data into 80% train and 20% val
-    split_index = len(processed_data) // 5
+    # Split the data into 10% train and 90% val
+    split_index = len(processed_data) // 10 * 9
     val_data = processed_data[:split_index]
     train_data = processed_data[split_index:]
 
@@ -416,4 +416,4 @@ if __name__ == "__main__":
         print("Usage: python cmu_process.py <data_root>")
         sys.exit(1)
     data_root = sys.argv[1]
-    main(data_root, data_root, k=5, max_offset=30)
+    main(data_root, data_root, k=20, max_offset=30)
