@@ -80,7 +80,7 @@ def _decode(serialized_example, num_parallel_calls=60):
 def main(split="train", path_to_tfrecords='pouring_tfrecords'):
     dataset_name = path_to_tfrecords.strip('_tfrecords')
     path_to_tfrecords = os.path.join(
-        "/home/chenminghao/datasets", path_to_tfrecords)
+        "/home/tako/co/videosync_scl", path_to_tfrecords)
     tfrecord_files = get_tfrecords(dataset_name, split, path_to_tfrecords)
     num_parallel_calls = 60
     decode = partial(_decode, num_parallel_calls=num_parallel_calls)
@@ -127,5 +127,5 @@ def main(split="train", path_to_tfrecords='pouring_tfrecords'):
 
 
 if __name__ == '__main__':
-    main(split="train", path_to_tfrecords='penn_action_tfrecords')
-    main(split="val", path_to_tfrecords='penn_action_tfrecords')
+    main(split="train", path_to_tfrecords='pouring_tfrecords')
+    main(split="val", path_to_tfrecords='pouring_tfrecords')

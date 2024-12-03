@@ -30,7 +30,7 @@ def get_video_frame_count(video_file_path):
 
 
 def main(split="train"):
-    data_root = "/home/yosubs/koa_scratch/pouring"
+    data_root = "/data/pouring"
     if split == "train":
         save_file = os.path.join(data_root, f"train.pkl")
     else:

@@ -43,7 +43,7 @@ def pad_matrices(matrices, target_size):
     return np.vstack(padded_matrices)
 
 
-prefix = '/home/yosubs/videosync_scl/'
+prefix = '/home/tako/co/videosync_scl/'
 
 # Load prepared data
 X_train = np.load(
