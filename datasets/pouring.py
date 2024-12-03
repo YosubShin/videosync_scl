@@ -157,8 +157,6 @@ class Pouring(torch.utils.data.Dataset):
             # T H W C -> T C H W, [0,1] tensor
             video = video.permute(0, 3, 1, 2).float() / 255.0
 
-            if i == 1:
-                video = torch.rand(video.shape)
 
             steps = torch.arange(0, seq_len, self.cfg.DATA.SAMPLE_ALL_STRIDE)
             video = video[steps.long()]
