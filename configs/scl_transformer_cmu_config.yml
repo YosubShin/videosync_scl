@@ -36,7 +36,7 @@ EVAL:
     - 5
     - 10
     - 15
-  NUM_FRAMES: 240
+  NUM_FRAMES: 80
   TASKS:
     - sync_offset
   VAL_INTERVAL: 2
@@ -80,7 +80,7 @@ NUM_GPUS: 1
 OPTIMIZER:
   GRAD_CLIP: 10
   LR:
-    DECAY_TYPE: cosine
+    DECAY_TYPE: cosinewarmup
     INITIAL_LR: 0.0004
     NUM_WARMUP_STEPS: 1
     WARMUP_LR: 0.0
@@ -99,5 +99,5 @@ SCL:
 TRAIN:
   BATCH_SIZE: 4
   MAX_EPOCHS: 310
-  NUM_FRAMES: 240
+  NUM_FRAMES: 80
 TRAINING_ALGO: scl
