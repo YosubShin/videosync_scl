@@ -18,3 +18,7 @@ wandb/
 
 # generated files
 *.npy
+
+# temporary files
+*.log
+pouring_tfrecords
