@@ -22,6 +22,7 @@ import utils.distributed as du
 import torch.distributed as dist
 from tqdm import tqdm
 from datasets import unnorm
+from sklearn.manifold import TSNE
 
 logger = logging.get_logger(__name__)
 
@@ -652,6 +653,53 @@ def decision_offset(
             f"{name0}_{name1}_epoch_{cur_epoch}_iter_{cur_iter}_sim.png",
         )
     )
+    plt.close()
+
+    # Perform t-SNE dimensionality reduction on the embeddings
+    # Get embeddings for both views
+    view1_np = view1.cpu().detach().numpy()
+    view2_np = view2.cpu().detach().numpy()
+
+    # Combine embeddings for t-SNE
+    combined_embeddings = np.vstack([view1_np, view2_np])
+    
+    # Perform t-SNE
+    tsne = TSNE(n_components=2, random_state=42)
+    embeddings_2d = tsne.fit_transform(combined_embeddings)
+
+    # Split back into view1 and view2
+    view1_2d = embeddings_2d[:len(view1_np)]
+    view2_2d = embeddings_2d[len(view1_np):]
+
+    # Create color maps based on frame indices
+    view1_colors = np.arange(len(view1_np))
+    view2_colors = np.arange(len(view2_np))
+
+    # Plot the embeddings
+    plt.figure(figsize=(12, 6))
+
+    # Plot view1 points
+    scatter1 = plt.scatter(view1_2d[:, 0], view1_2d[:, 1], 
+                          c=view1_colors, cmap='viridis', 
+                          marker='o', label='View 1')
+    
+    # Plot view2 points
+    scatter2 = plt.scatter(view2_2d[:, 0], view2_2d[:, 1], 
+                          c=view2_colors, cmap='plasma',
+                          marker='^', label='View 2')
+
+    plt.colorbar(scatter1, label='Frame Index')
+    plt.legend()
+    plt.title(f't-SNE Visualization of Frame Embeddings\n{name0}_{name1}')
+    plt.xlabel('t-SNE Dimension 1')
+    plt.ylabel('t-SNE Dimension 2')
+
+    # Save the plot
+    plt.savefig(os.path.join(
+            cfg.LOGDIR,
+            "eval_logs",
+            f"{name0}_{name1}_epoch_{cur_epoch}_iter_{cur_iter}_tsne.png",
+        ))
     plt.close()
 
     # logger.info(
