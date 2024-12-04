@@ -86,78 +86,14 @@ def get_embeddings_dataset(cfg, model, data_loader):
 def evaluate_once(cfg, model, train_loader, val_loader, train_emb_loader, val_emb_loader,
                   iterator_tasks, embedding_tasks, cur_epoch, summary_writer):
     """Evaluate learnt embeddings on downstream tasks."""
+    from evaluation.sync_offset import SyncOffset
+    from algos import get_algo
 
-    metrics = {}
-    if iterator_tasks:
-        for task_name, task in iterator_tasks.items():
-            metrics[task_name] = task.evaluate(
-                model, train_loader, val_loader, cur_epoch, summary_writer)
+    sync_offset = SyncOffset(cfg)
+    algo = get_algo(cfg)
 
-    if embedding_tasks:
-        for i, dataset_name in enumerate(cfg.DATASETS):
-            dataset = {'name': dataset_name}
-            logger.info(
-                f"generating train embeddings for {dataset_name} dataset at {cur_epoch}.")
-            dataset['train_dataset'] = get_embeddings_dataset(
-                cfg, model, train_emb_loader[i])
-            logger.info(
-                f"generating val embeddings for {dataset_name} dataset at {cur_epoch}.")
-            dataset['val_dataset'] = get_embeddings_dataset(
-                cfg, model, val_emb_loader[i])
-
-            for task_name, task in embedding_tasks.items():
-                if task_name not in metrics:
-                    metrics[task_name] = {}
-                metrics[task_name][dataset_name] = task.evaluate(
-                    dataset, cur_epoch, summary_writer)
-
-            if dataset_name == "pouring" or dataset_name == "baseball_pitch" or dataset_name == "ntu":
-                # print("generating visualization for video alignment")
-                time_stride = 10
-                K = 5
-                q_id = 0
-                k_ids = [1]
-                query_data = dataset['val_dataset']['embs'][q_id]
-                key_data_list = [dataset['val_dataset']
-                                 ['embs'][k_id] for k_id in k_ids]
-
-                key_frames_list = [0 for _ in range(K)]
-
-                for data_id, data in enumerate(val_emb_loader[i].dataset.dataset):
-                    if data['name'] == dataset['val_dataset']['names'][q_id]:
-                        query_video = val_emb_loader[i].dataset[data_id][0].permute(
-                            0, 2, 3, 1)
-                    else:
-                        for k, k_id in enumerate(k_ids):
-                            if data['name'] == dataset['val_dataset']['names'][k_id]:
-                                key_frames_list[k] = val_emb_loader[i].dataset[data_id][0].permute(
-                                    0, 2, 3, 1)
-                '''
-                create_multiple_video(np.arange(len(query_video)).reshape(-1,1), query_video, 
-                        [np.arange(len(key_video)).reshape(-1,1) for key_video in key_frames_list], key_frames_list, 
-                        os.path.join(cfg.LOGDIR, f'origin_multi_{cur_epoch}.mp4'), use_dtw=True, interval=50)
-                create_multiple_video(query_data, query_video, key_data_list, key_frames_list, 
-                        os.path.join(cfg.LOGDIR, f'alignment_multi_{cur_epoch}.mp4'), use_dtw=True, interval=50)
-                '''
-                key_video, key_data = key_frames_list[0], key_data_list[0]
-                create_video(np.arange(len(query_video)).reshape(-1, 1), query_video, np.arange(len(key_video)).reshape(-1, 1), key_video,
-                             os.path.join(cfg.LOGDIR, f'origin_{cur_epoch}.mp4'), use_dtw=False, interval=50, time_stride=time_stride, image_out=True)
-                create_video(query_data, query_video, key_data, key_video,
-                             os.path.join(cfg.LOGDIR, f'alignment_{cur_epoch}.mp4'), use_dtw=True, interval=50, time_stride=time_stride, image_out=True)
-
-            del dataset
-
-    # Add all metrics in a separate tag so that analysis is easier.
-    for task_name in embedding_tasks.keys():
-        for dataset in cfg.DATASETS:
-            # logger.info(f"metrics/{dataset}_{task_name}: {metrics[task_name][dataset]:.3f}")
-            summary_writer.add_scalar('metrics/%s_%s' % (dataset, task_name),
-                                      metrics[task_name][dataset], cur_epoch)
-        avg_metric = sum(metrics[task_name].values())
-        avg_metric /= len(cfg.DATASETS)
-        logger.info(f"metrics/all_{task_name}: {avg_metric:.3f}")
-        summary_writer.add_scalar('metrics/all_%s' % task_name,
-                                  avg_metric, cur_epoch)
+    sync_offset.evaluate(
+                model, val_loader, val_emb_loader, cur_epoch, summary_writer, sample=False, cur_iter=0, algo=algo)
 
 
 @record
@@ -169,6 +105,8 @@ def evaluate():
     cfg.PATH_TO_DATASET = os.path.join(args.workdir, cfg.PATH_TO_DATASET)
     cfg.NUM_GPUS = torch.cuda.device_count()
     cfg.args = args
+
+    wandb.init(project="videosync_scl", sync_tensorboard=True, config=cfg)
 
     torch.distributed.init_process_group(backend='nccl', init_method='env://')
     du.init_distributed_training(cfg)
@@ -193,7 +131,7 @@ def evaluate():
 
     # Setup Dataset Iterators from train and val datasets.
     train_loader, train_emb_loader = construct_dataloader(cfg, "train")
-    val_loader, val_emb_loader = construct_dataloader(cfg, "val")
+    val_loader, [val_emb_loader] = construct_dataloader(cfg, "val")
     iterator_tasks, embedding_tasks = get_tasks(cfg)
 
     evaluate_once(cfg, model, train_loader, val_loader, train_emb_loader, val_emb_loader,
@@ -201,6 +139,6 @@ def evaluate():
 
 
 if __name__ == '__main__':
-    wandb.init(project="videosync_scl", sync_tensorboard=True)
+    wandb.require("service")
     evaluate()
     wandb.finish()
