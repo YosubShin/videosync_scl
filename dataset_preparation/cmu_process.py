@@ -178,7 +178,7 @@ def process_event(event_dir, output_dir, event_id, k, max_offset):
         total_frames2 = int(video2.get(cv2.CAP_PROP_FRAME_COUNT))
 
         min_total_frames = min(total_frames1, total_frames2)
-        sample_frame_size = 480
+        sample_frame_size = 240
 
         safe_margin = max_offset
 
