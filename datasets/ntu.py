@@ -16,7 +16,6 @@ from logging import INFO
 logger = logging.get_logger(__name__)
 logger.setLevel(INFO)
 
-# prefix = "/home/yosubs/koa_scratch/ntu/"
 prefix = ""
 
 class Ntu(torch.utils.data.Dataset):
@@ -72,20 +71,37 @@ class Ntu(torch.utils.data.Dataset):
         video_masks = []
         names = []
 
+        # First, get both video lengths to determine the shorter duration
+        video_lengths = []
+        for i in range(2):
+            video_file = os.path.join(
+                self.cfg.args.workdir, self.dataset_name, self.dataset[index][f"video_file_{i}"][len(prefix):])
+            video, _, _ = read_video(video_file, pts_unit='sec')
+            video_lengths.append(len(video))
+
+        min_length = min(video_lengths)
+
         for i, camera_id in enumerate(['001', '002']):
             name = self.dataset[index][f"video_file_{i}"].split(
                 "/")[-1].split(".")[0]
             video_file = os.path.join(
                 self.cfg.args.workdir, self.dataset_name, self.dataset[index][f"video_file_{i}"][len(prefix):])
             video, _, info = read_video(video_file, pts_unit='sec')
+            # Crop video to shorter length
+            video = video[:min_length]
             seq_len = len(video)
             if seq_len == 0:
                 print('seq_len is 0', video_file)
             # T H W C -> T C H W, [0,1] tensor
             video = video.permute(0, 3, 1, 2).float() / 255.0
 
+            # Use random signal instead of actual frame
             # if i == 1:
-            #     video = torch.rand(video.shape)
+            # video = torch.rand(video.shape)
+
+            # Crop video to first X frames
+            # video = video[:300]
+            # seq_len = len(video)  # Update seq_len to new length
 
             steps = torch.arange(0, seq_len, self.cfg.DATA.SAMPLE_ALL_STRIDE)
             video = video[steps.long()]
