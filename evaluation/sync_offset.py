@@ -347,9 +347,14 @@ class SyncOffset(object):
                         ],
                     }
                 )
+
+            wandb_metrics.update({
+                'num_video_pairs': len(val_emb_loader),
+            })
+
             wandb.log(wandb_metrics)
 
-        val(self.cfg, val_loader, model, algo, cur_epoch, summary_writer, sample)
+        # val(self.cfg, val_loader, model, algo, cur_epoch, summary_writer, sample)
 
         # Ensure all processes are synchronized
         dist.barrier()
