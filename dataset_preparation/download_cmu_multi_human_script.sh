@@ -2,20 +2,21 @@
 
 # List of datasets
 datasets=(
-    "171204_pose1"
-    "171204_pose2"
-    "171204_pose3"
-    "171204_pose4"
-    "171204_pose5" 
-    "171204_pose6"
-    "171026_pose1"
-    "171026_pose2"
-    "171026_pose3"
+    "151125_bang"
+    "151125_mafia"
+    "160224_mafia1"
+    "160224_mafia2"
+    "160226_mafia1"
+    "160226_mafia2"
+    "160317_meeting1"
+    "160422_mafia1"
+    "160422_mafia2"
+    "160906_pizza1"
 )
 
 # Base URLs and paths
 base_url="http://domedb.perception.cs.cmu.edu/webdata/dataset"
-base_dir="/data/cmu/pose_dataset"
+base_dir="/data/cmu/multi_human_dataset"
 
 # Video files to download for each dataset
 video_files=(

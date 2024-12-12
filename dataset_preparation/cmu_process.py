@@ -343,7 +343,7 @@ def main(data_root, output_dir, k=5, max_offset=30):
     pool = multiprocessing.Pool(processes=4)
 
     pbar = tqdm(total=0, desc="Processing all events", dynamic_ncols=True)
-
+ 
     def update_progress(_):
         pbar.update(1)
 
@@ -396,8 +396,8 @@ def main(data_root, output_dir, k=5, max_offset=30):
     # Shuffle the processed_data before splitting
     random.shuffle(processed_data)
 
-    # Split the data into 10% train and 90% val
-    split_index = len(processed_data) // 10 * 9
+    # Split the data into 50% train and 50% val
+    split_index = len(processed_data) // 10 * 5
     val_data = processed_data[:split_index]
     train_data = processed_data[split_index:]
 
@@ -412,8 +412,10 @@ def main(data_root, output_dir, k=5, max_offset=30):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Usage: python cmu_process.py <data_root>")
+    if len(sys.argv) != 3:
+        print("Usage: python cmu_process.py <data_root> <output_dir>")
         sys.exit(1)
     data_root = sys.argv[1]
-    main(data_root, data_root, k=20, max_offset=30)
+    output_dir = sys.argv[2]
+    main(data_root, output_dir, k=20, max_offset=30)
+
