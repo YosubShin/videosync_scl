@@ -101,7 +101,8 @@ def val(cfg, val_loader, model, algo, cur_epoch, summary_writer, sample):
                 loss_dict[key][torch.isnan(loss_dict[key])] = 0
                 if key not in total_loss:
                     total_loss[key] = 0
-                total_loss[key] += du.all_reduce([loss_dict[key]])[0].item() / data_size
+                total_loss[key] += du.all_reduce([loss_dict[key]]
+                                                 )[0].item() / data_size
 
             count += 1
 
@@ -120,7 +121,8 @@ def val(cfg, val_loader, model, algo, cur_epoch, summary_writer, sample):
 
     for key in total_loss:
         summary_writer.add_scalar(f"val/{key}", total_loss[key], cur_epoch)
-    logger.info("epoch {}, val loss: {:.3f}".format(cur_epoch, total_loss["loss"]))
+    logger.info("epoch {}, val loss: {:.3f}".format(
+        cur_epoch, total_loss["loss"]))
 
     wandb.log(
         {
@@ -174,7 +176,8 @@ class SyncOffset(object):
 
         # Define the CSV file path to store the raw frame errors
         csv_file_name = f"evaluation_results_epoch_{cur_epoch}_iter_{self.cur_iter}.csv"
-        csv_file_path = os.path.join(self.cfg.LOGDIR, "eval_logs", csv_file_name)
+        csv_file_path = os.path.join(
+            self.cfg.LOGDIR, "eval_logs", csv_file_name)
 
         # Set up the progress bar for rank 0 (root process)
         if dist.get_rank() == 0:
@@ -385,7 +388,8 @@ class SyncOffset(object):
     def get_embs(
         self, model, video, frame_label, seq_len, chosen_steps, video_masks, name
     ):
-        logger.debug(f"name: {name}, video.shape: {video.shape}, seq_len: {seq_len}")
+        logger.debug(
+            f"name: {name}, video.shape: {video.shape}, seq_len: {seq_len}")
 
         assert video.size(0) == 1  # batch_size==1
         assert video.size(1) == int(seq_len.item())
@@ -416,7 +420,8 @@ def get_similarity(view1, view2):
     norm1 = norm1.reshape(-1, 1)
     norm2 = torch.sum(torch.square(view2), dim=1)
     norm2 = norm2.reshape(1, -1)
-    similarity = norm1 + norm2 - 2.0 * torch.matmul(view1, view2.transpose(1, 0))
+    similarity = norm1 + norm2 - 2.0 * \
+        torch.matmul(view1, view2.transpose(1, 0))
     similarity = -1.0 * torch.max(similarity, torch.zeros(1).cuda())
 
     return similarity
@@ -494,6 +499,109 @@ def plot_frames(
     plt.close(fig)
 
 
+def plot_sim(softmaxed_sim_12, predict, label, log_reg_sync_offset, num_frames_median, num_frames_dtw,
+             name0, name1, cur_epoch, cur_iter, cfg):
+    """Plot similarity matrix heatmap with prediction lines."""
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(
+        softmaxed_sim_12.cpu().numpy(),
+        annot=False,
+        cmap="viridis",
+        cbar=True,
+        square=True,
+    )
+    plt.plot(
+        predict.cpu(),
+        np.arange(len(predict.cpu())),
+        color="red",
+        marker="o",
+        linestyle="-",
+        linewidth=2,
+        markersize=5,
+    )
+
+    # Plot lines for different methods
+    methods = {
+        'Label': (label.item(), 'blue'),
+        'Logistic regression': (log_reg_sync_offset.item(), 'green'),
+        'Median': (num_frames_median, 'red'),
+        'Dtw': (num_frames_dtw, 'yellow')
+    }
+
+    for method_name, (offset, color) in methods.items():
+        k = offset * -1
+        x_line = np.arange(softmaxed_sim_12.shape[1])
+        y_line = x_line + k
+
+        valid_indices = (y_line >= 0) & (y_line < softmaxed_sim_12.shape[0])
+        x_line = x_line[valid_indices]
+        y_line = y_line[valid_indices]
+
+        plt.plot(x_line, y_line, color=color, linestyle="--",
+                 linewidth=2, label=method_name)
+
+    plt.legend()
+    plt.gca().set_aspect("equal", adjustable="box")
+    plt.title(f"{name0}_{name1}_epoch_{cur_epoch}_iter_{cur_iter}")
+
+    plt.savefig(
+        os.path.join(
+            cfg.LOGDIR,
+            "eval_logs",
+            f"{name0}_{name1}_epoch_{cur_epoch}_iter_{cur_iter}_sim.png",
+        )
+    )
+    plt.close()
+
+
+def plot_tsne(view1, view2, name0, name1, cur_epoch, cur_iter, cfg):
+    """Plot t-SNE visualization of frame embeddings."""
+    # Convert embeddings to numpy
+    view1_np = view1.cpu().detach().numpy()
+    view2_np = view2.cpu().detach().numpy()
+
+    # Combine embeddings for t-SNE
+    combined_embeddings = np.vstack([view1_np, view2_np])
+
+    # Perform t-SNE
+    tsne = TSNE(n_components=2, random_state=42)
+    embeddings_2d = tsne.fit_transform(combined_embeddings)
+
+    # Split back into view1 and view2
+    view1_2d = embeddings_2d[:len(view1_np)]
+    view2_2d = embeddings_2d[len(view1_np):]
+
+    # Create color maps based on frame indices
+    view1_colors = np.arange(len(view1_np))
+    view2_colors = np.arange(len(view2_np))
+
+    # Plot the embeddings
+    plt.figure(figsize=(12, 6))
+
+    # Plot view1 points
+    scatter1 = plt.scatter(view1_2d[:, 0], view1_2d[:, 1],
+                           c=view1_colors, cmap='viridis',
+                           marker='o', label='View 1')
+
+    # Plot view2 points
+    scatter2 = plt.scatter(view2_2d[:, 0], view2_2d[:, 1],
+                           c=view2_colors, cmap='plasma',
+                           marker='^', label='View 2')
+
+    plt.colorbar(scatter1, label='Frame Index')
+    plt.legend()
+    plt.title(f't-SNE Visualization of Frame Embeddings\n{name0}_{name1}')
+    plt.xlabel('t-SNE Dimension 1')
+    plt.ylabel('t-SNE Dimension 2')
+
+    plt.savefig(os.path.join(
+        cfg.LOGDIR,
+        "eval_logs",
+        f"{name0}_{name1}_epoch_{cur_epoch}_iter_{cur_iter}_tsne.png",
+    ))
+    plt.close()
+
+
 def decision_offset(
     cfg,
     video0,
@@ -508,6 +616,7 @@ def decision_offset(
     cur_iter,
     sample,
     log_reg,
+    skip_plot=True,
 ):
     logger.debug(f"view1.shape: {view1.shape}")
     logger.debug(f"view2.shape: {view2.shape}")
@@ -560,155 +669,27 @@ def decision_offset(
     abs_median = abs(num_frames_median - label)
     abs_mean = abs(num_frames_mean - label)
 
-    plot_frames(
-        video0,
-        video1,
-        name0,
-        name1,
-        label,
-        num_frames_median,
-        cur_epoch,
-        cur_iter,
-        cfg,
-    )
-
-    plt.figure(figsize=(10, 8))
-    sns.heatmap(
-        softmaxed_sim_12.cpu().numpy(),
-        annot=False,
-        cmap="viridis",
-        cbar=True,
-        square=True,
-    )
-    plt.plot(
-        predict.cpu(),
-        np.arange(len(predict.cpu())),
-        color="red",
-        marker="o",
-        linestyle="-",
-        linewidth=2,
-        markersize=5,
-    )
-
-    # Create a line for label
-    k = label.item() * -1
-    # Create the points for the line with y-intercept k
-    x_line = np.arange(softmaxed_sim_12.shape[1])
-    y_line = x_line + k
-
-    valid_indices = (y_line >= 0) & (y_line < softmaxed_sim_12.shape[0])
-    x_line = x_line[valid_indices]
-    y_line = y_line[valid_indices]
-
-    plt.plot(x_line, y_line, color="blue", linestyle="--", linewidth=2, label=f"Label")
-
-    # Create a line for log_reg
-    k = log_reg_sync_offset.item() * -1
-    # Create the points for the line with y-intercept k
-    x_line = np.arange(softmaxed_sim_12.shape[1])
-    y_line = x_line + k
-
-    valid_indices = (y_line >= 0) & (y_line < softmaxed_sim_12.shape[0])
-    x_line = x_line[valid_indices]
-    y_line = y_line[valid_indices]
-
-    plt.plot(
-        x_line,
-        y_line,
-        color="green",
-        linestyle="--",
-        linewidth=2,
-        label=f"Logistic regression",
-    )
-
-    # Create a line for median
-    k = num_frames_median * -1
-    # Create the points for the line with y-intercept k
-    x_line = np.arange(softmaxed_sim_12.shape[1])
-    y_line = x_line + k
-
-    valid_indices = (y_line >= 0) & (y_line < softmaxed_sim_12.shape[0])
-    x_line = x_line[valid_indices]
-    y_line = y_line[valid_indices]
-
-    plt.plot(x_line, y_line, color="red", linestyle="--", linewidth=2, label=f"Median")
-
-    # Create a line for dtw
-    k = num_frames_dtw * -1
-    # Create the points for the line with y-intercept k
-    x_line = np.arange(softmaxed_sim_12.shape[1])
-    y_line = x_line + k
-
-    valid_indices = (y_line >= 0) & (y_line < softmaxed_sim_12.shape[0])
-    x_line = x_line[valid_indices]
-    y_line = y_line[valid_indices]
-
-    plt.plot(x_line, y_line, color="yellow", linestyle="--", linewidth=2, label=f"Dtw")
-
-    plt.legend()
-
-    plt.gca().set_aspect("equal", adjustable="box")
-
-    # Save the heatmap to a PNG file
-    plt.title(f"{name0}_{name1}_epoch_{cur_epoch}_iter_{cur_iter}")
-    plt.savefig(
-        os.path.join(
-            cfg.LOGDIR,
-            "eval_logs",
-            f"{name0}_{name1}_epoch_{cur_epoch}_iter_{cur_iter}_sim.png",
+    if not skip_plot:
+        plot_frames(
+            video0,
+            video1,
+            name0,
+            name1,
+            label,
+            num_frames_median,
+            cur_epoch,
+            cur_iter,
+            cfg,
         )
-    )
-    plt.close()
 
-    # Perform t-SNE dimensionality reduction on the embeddings
-    # Get embeddings for both views
-    view1_np = view1.cpu().detach().numpy()
-    view2_np = view2.cpu().detach().numpy()
+        plot_sim(softmaxed_sim_12, predict, label, log_reg_sync_offset,
+                 num_frames_median, num_frames_dtw, name0, name1,
+                 cur_epoch, cur_iter, cfg)
 
-    # Combine embeddings for t-SNE
-    combined_embeddings = np.vstack([view1_np, view2_np])
-    
-    # Perform t-SNE
-    tsne = TSNE(n_components=2, random_state=42)
-    embeddings_2d = tsne.fit_transform(combined_embeddings)
+        plot_tsne(view1, view2, name0, name1, cur_epoch, cur_iter, cfg)
 
-    # Split back into view1 and view2
-    view1_2d = embeddings_2d[:len(view1_np)]
-    view2_2d = embeddings_2d[len(view1_np):]
-
-    # Create color maps based on frame indices
-    view1_colors = np.arange(len(view1_np))
-    view2_colors = np.arange(len(view2_np))
-
-    # Plot the embeddings
-    plt.figure(figsize=(12, 6))
-
-    # Plot view1 points
-    scatter1 = plt.scatter(view1_2d[:, 0], view1_2d[:, 1], 
-                          c=view1_colors, cmap='viridis', 
-                          marker='o', label='View 1')
-    
-    # Plot view2 points
-    scatter2 = plt.scatter(view2_2d[:, 0], view2_2d[:, 1], 
-                          c=view2_colors, cmap='plasma',
-                          marker='^', label='View 2')
-
-    plt.colorbar(scatter1, label='Frame Index')
-    plt.legend()
-    plt.title(f't-SNE Visualization of Frame Embeddings\n{name0}_{name1}')
-    plt.xlabel('t-SNE Dimension 1')
-    plt.ylabel('t-SNE Dimension 2')
-
-    # Save the plot
-    plt.savefig(os.path.join(
-            cfg.LOGDIR,
-            "eval_logs",
-            f"{name0}_{name1}_epoch_{cur_epoch}_iter_{cur_iter}_tsne.png",
-        ))
-    plt.close()
-
-    # logger.info(
-    #     f'name0: {name0}, frame_error (median): {num_frames_median - label}, frame_error (log_reg): {log_reg_sync_offset - label}, frame_error (dtw): {num_frames_dtw - label}')
+    logger.info(
+        f'name0: {name0}, frame_error (median): {num_frames_median - label}, frame_error (log_reg): {log_reg_sync_offset - label}, frame_error (dtw): {num_frames_dtw - label}')
 
     return {
         "abs_median": abs_median,
