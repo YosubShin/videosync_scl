@@ -40,7 +40,7 @@ def construct_dataloader(cfg, split, mode="auto"):
             #                                            drop_last=True)
 
             train_eval_dataset = Ntu(
-                cfg, split, mode="eval")
+                cfg, split, mode="eval", sample_all=True)
             train_eval_sampler = torch.utils.data.distributed.DistributedSampler(
                 train_eval_dataset) if cfg.NUM_GPUS > 1 else None
             train_eval_loader = [torch.utils.data.DataLoader(train_eval_dataset, batch_size=1, shuffle=False,
