@@ -28,7 +28,8 @@ def log_failed_task(video1_output_path, video2_output_path, reason):
     """Log a failed task with a reason for failure."""
     with open(FAILURE_LOG_FILE, 'a') as f:
         f.write(f"{video1_output_path},{video2_output_path},{reason}\n")
-    logging.warning(f"Logged failed task: {video1_output_path}, {video2_output_path}, Reason: {reason}")
+    logging.warning(
+        f"Logged failed task: {video1_output_path}, {video2_output_path}, Reason: {reason}")
 
 
 def is_video_valid(video_path):
@@ -122,17 +123,19 @@ def process_video_pair(args, failed_tasks):
     # Check if this pair has already failed with a specific reason
     if (video1_output_path, video2_output_path) in failed_tasks:
         reason = failed_tasks[(video1_output_path, video2_output_path)]
-        logging.info(f"Skipping previously failed task: {video1_output_path}, {video2_output_path}, Reason: {reason}")
+        logging.info(
+            f"Skipping previously failed task: {video1_output_path}, {video2_output_path}, Reason: {reason}")
         return False
 
     # Skip processing if output files already exist
     if os.path.exists(video1_output_path) and os.path.exists(video2_output_path):
-        logging.info(f"Skipping already existing files: {video1_output_path} and {video2_output_path}")
+        logging.info(
+            f"Skipping already existing files: {video1_output_path} and {video2_output_path}")
         return True
 
     # Process the video pair without retries
     success, reason = sync_and_save_video_pair(
-        video1_path, video2_path, start_frame, end_frame, offset, 
+        video1_path, video2_path, start_frame, end_frame, offset,
         video1_output_path, video2_output_path
     )
 
@@ -142,7 +145,8 @@ def process_video_pair(args, failed_tasks):
         # Clean up and log the failure reason
         cleanup_videos(video1_output_path, video2_output_path)
         log_failed_task(video1_output_path, video2_output_path, reason)
-        logging.error(f"Processing failed for {video1_output_path} and {video2_output_path}. Reason: {reason}")
+        logging.error(
+            f"Processing failed for {video1_output_path} and {video2_output_path}. Reason: {reason}")
         return False
 
 
@@ -178,7 +182,7 @@ def process_event(event_dir, output_dir, event_id, k, max_offset):
         total_frames2 = int(video2.get(cv2.CAP_PROP_FRAME_COUNT))
 
         min_total_frames = min(total_frames1, total_frames2)
-        sample_frame_size = 240
+        sample_frame_size = 480
 
         safe_margin = max_offset
 
@@ -236,7 +240,7 @@ def process_event(event_dir, output_dir, event_id, k, max_offset):
 
 
 def sync_and_save_video_pair(video1_path, video2_path, start_frame, end_frame, offset, video1_output_path, video2_output_path,
-                             frame_skip=5, green_threshold=0.8, black_threshold=0.8, 
+                             frame_skip=5, green_threshold=0.8, black_threshold=0.8,
                              similarity_threshold=0.9, similar_frames_ratio_threshold=0.8, min_frames_for_similarity_check=10):
     """Open video files, synchronize, detect bad frames, and save to output videos."""
     cap1 = cv2.VideoCapture(video1_path)
@@ -343,7 +347,7 @@ def main(data_root, output_dir, k=5, max_offset=30):
     pool = multiprocessing.Pool(processes=4)
 
     pbar = tqdm(total=0, desc="Processing all events", dynamic_ncols=True)
- 
+
     def update_progress(_):
         pbar.update(1)
 
@@ -377,7 +381,8 @@ def main(data_root, output_dir, k=5, max_offset=30):
     # Process tasks
     for task, dataset_entry in task_list:
         result = pool.apply_async(
-            process_video_pair, args=(task, failed_tasks), callback=update_progress
+            process_video_pair, args=(
+                task, failed_tasks), callback=update_progress
         )
 
         if not result.get():  # If the task fails
@@ -398,17 +403,19 @@ def main(data_root, output_dir, k=5, max_offset=30):
 
     # Split the data into 50% train and 50% val
     split_index = len(processed_data) // 10 * 5
-    val_data = processed_data[:split_index]
-    train_data = processed_data[split_index:]
+    train_data = processed_data[:split_index]
+    val_data = processed_data[split_index:]
 
     # Save train and val data
     with open(os.path.join(output_dir, "train.pkl"), "wb") as f:
         pickle.dump(train_data, f)
-    logging.info(f"Training data saved to train.pkl with {len(train_data)} entries")
+    logging.info(
+        f"Training data saved to train.pkl with {len(train_data)} entries")
 
     with open(os.path.join(output_dir, "val.pkl"), "wb") as f:
         pickle.dump(val_data, f)
-    logging.info(f"Validation data saved to val.pkl with {len(val_data)} entries")
+    logging.info(
+        f"Validation data saved to val.pkl with {len(val_data)} entries")
 
 
 if __name__ == "__main__":
@@ -418,4 +425,3 @@ if __name__ == "__main__":
     data_root = sys.argv[1]
     output_dir = sys.argv[2]
     main(data_root, output_dir, k=20, max_offset=30)
-

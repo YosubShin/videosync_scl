@@ -688,9 +688,6 @@ def decision_offset(
 
         plot_tsne(view1, view2, name0, name1, cur_epoch, cur_iter, cfg)
 
-    logger.info(
-        f'name0: {name0}, frame_error (median): {num_frames_median - label}, frame_error (log_reg): {log_reg_sync_offset - label}, frame_error (dtw): {num_frames_dtw - label}')
-
     return {
         "abs_median": abs_median,
         "err_median": num_frames_median - label,
