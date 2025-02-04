@@ -1,11 +1,12 @@
+import json
 import numpy as np
-import torch
-from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVR
 from sklearn.metrics import mean_absolute_error, median_absolute_error
-import torch.nn.functional as F
 import pickle
+from sklearn.neural_network import MLPClassifier
+from sklearn.preprocessing import LabelEncoder
+import argparse
 
 # Function to calculate the baseline sync offset using the median approach
 
@@ -43,17 +44,23 @@ def pad_matrices(matrices, target_size):
     return np.vstack(padded_matrices)
 
 
-prefix = '/home/tako/co/videosync_scl/'
+# Set up command line argument parsing
+parser = argparse.ArgumentParser(description='Train sync offset detector')
+parser.add_argument('--prefix', type=str, required=True,
+                    help='Prefix for input/output files (e.g., "ntu")')
+args = parser.parse_args()
+
+prefix = args.prefix
 
 # Load prepared data
 X_train = np.load(
-    f'{prefix}train_softmaxed_sim_12.npy', allow_pickle=True)
+    f'{prefix}_train_softmaxed_sim_12.npy', allow_pickle=True)
 y_train = np.load(
-    f'{prefix}train_softmaxed_sim_12_labels.npy', allow_pickle=True)
+    f'{prefix}_train_softmaxed_sim_12_labels.npy', allow_pickle=True)
 X_val = np.load(
-    f'{prefix}val_softmaxed_sim_12.npy', allow_pickle=True)
+    f'{prefix}_val_softmaxed_sim_12.npy', allow_pickle=True)
 y_val = np.load(
-    f'{prefix}val_softmaxed_sim_12_labels.npy', allow_pickle=True)
+    f'{prefix}_val_softmaxed_sim_12_labels.npy', allow_pickle=True)
 
 print(f'Shape of X_train: {X_train.shape}, Shape of y_train: {y_train.shape}')
 print(f'Shape of X_val: {X_val.shape}, Shape of y_val: {y_val.shape}')
@@ -67,25 +74,87 @@ print(
     f'Shape of X_train_padded: {X_train_padded.shape}, Shape of X_val_padded: {X_val_padded.shape}')
 print(f'Shape of y_train: {y_train.shape}, Shape of y_val: {y_val.shape}')
 
-# Initialize models
-log_reg = LogisticRegression(n_jobs=-1, verbose=True, max_iter=1000)
-svm = SVR()
+# Define the range of classes explicitly
+min_offset = -30
+max_offset = 30
+n_classes = max_offset - min_offset + 1  # 61 classes
+all_possible_classes = np.arange(min_offset, max_offset + 1)
 
-# Train models
-log_reg.fit(X_train_padded, y_train)
-svm.fit(X_train_padded, y_train)
+# Initialize label encoder with all possible classes
+label_encoder = LabelEncoder()
+# Fit with shifted values (0 to 60)
+label_encoder.fit(all_possible_classes + 30)
 
-# Evaluate models
-y_pred_log_reg = log_reg.predict(X_val_padded)
-y_pred_svm = svm.predict(X_val_padded)
+# Convert y values to class labels (0 to 60)
+y_train_shifted = y_train + 30
+y_val_shifted = y_val + 30
+y_train_encoded = label_encoder.transform(y_train_shifted)
+y_val_encoded = label_encoder.transform(y_val_shifted)
 
-mae_log_reg = mean_absolute_error(y_val, y_pred_log_reg)
-medae_log_reg = median_absolute_error(y_val, y_pred_log_reg)
-mae_svm = mean_absolute_error(y_val, y_pred_svm)
-medae_svm = median_absolute_error(y_val, y_pred_svm)
+# Configuration dictionary
+config = {
+    'train_log_reg': False,
+    'train_svm': False,
+    'train_mlp': True,
+    'mlp_config': {
+        'hidden_layer_sizes': (1024, 512, 256),
+        'max_iter': 1000,
+        'activation': 'relu',
+        'solver': 'adam',
+        'random_state': 42,
+        'learning_rate_init': 0.001,
+        'batch_size': 'auto',
+        'early_stopping': True,
+        'validation_fraction': 0.1,
+        'n_iter_no_change': 10,
+    }
+}
 
-print(f'Logistic Regression - MAE: {mae_log_reg}, MedAE: {medae_log_reg}')
-print(f'SVM - MAE: {mae_svm}, MedAE: {medae_svm}')
+# Print configuration and prefix for logging
+print("\nRunning with configuration:")
+print(f"Prefix: {prefix}")
+print(json.dumps(config, indent=4))
+print("\n")
+
+# Initialize models based on config
+models = {}
+if config['train_log_reg']:
+    models['log_reg'] = LogisticRegression(
+        n_jobs=-1, verbose=True, max_iter=1000)
+
+if config['train_svm']:
+    models['svm'] = SVR()
+
+if config['train_mlp']:
+    models['mlp'] = MLPClassifier(
+        verbose=True,
+        **config['mlp_config']
+    )
+
+# Train and evaluate models
+results = {}
+for name, model in models.items():
+    print(f"\nTraining {name}...")
+
+    # Handle MLP differently due to label encoding
+    if name == 'mlp':
+        model.fit(X_train_padded, y_train_encoded)
+        y_pred = model.predict(X_val_padded)
+        y_pred = y_pred - 30  # Convert back to original scale
+    else:
+        model.fit(X_train_padded, y_train)
+        y_pred = model.predict(X_val_padded)
+
+    # Calculate metrics
+    mae = mean_absolute_error(y_val, y_pred)
+    medae = median_absolute_error(y_val, y_pred)
+    results[name] = {'mae': mae, 'medae': medae}
+
+    print(f'{name.upper()} - MAE: {mae}, MedAE: {medae}')
+
+    # Save model
+    with open(f'{prefix}_{name}_model.pkl', 'wb') as file:
+        pickle.dump(model, file)
 
 # Calculate baseline using median approach
 baseline_offsets = []
@@ -98,10 +167,3 @@ baseline_mae = mean_absolute_error(y_val, baseline_offsets)
 baseline_medae = median_absolute_error(y_val, baseline_offsets)
 
 print(f'Baseline (Median) - MAE: {baseline_mae}, MedAE: {baseline_medae}')
-
-
-weights = log_reg.coef_
-print(f'Weights: {weights}')
-
-with open(f'{prefix}logistic_regression_model.pkl', 'wb') as file:
-    pickle.dump(log_reg, file)

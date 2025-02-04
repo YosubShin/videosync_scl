@@ -39,6 +39,8 @@ def parse_args():
         default=None,
         nargs=argparse.REMAINDER,
     )
+    parser.add_argument('--dataset_prefix', type=str, default='',
+                        help='Prefix to add to the output dataset files')
     return parser.parse_args()
 
 

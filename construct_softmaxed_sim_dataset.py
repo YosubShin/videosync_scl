@@ -50,9 +50,10 @@ def save_similarity_and_labels(cfg, model, loader, dataset_type):
 
     # Save data only from the main process
     if torch.distributed.get_rank() == 0:
-        np.save(f'{dataset_type}_softmaxed_sim_12.npy',
+        prefix = cfg.args.dataset_prefix
+        np.save(f'{prefix}_{dataset_type}_softmaxed_sim_12.npy',
                 np.array(all_similarity_matrices))
-        np.save(f'{dataset_type}_softmaxed_sim_12_labels.npy',
+        np.save(f'{prefix}_{dataset_type}_softmaxed_sim_12_labels.npy',
                 np.array(all_labels))
 
 
