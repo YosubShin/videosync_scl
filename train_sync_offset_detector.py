@@ -97,7 +97,7 @@ config = {
     'train_svm': False,
     'train_mlp': True,
     'mlp_config': {
-        'hidden_layer_sizes': (1024, 512, 256),
+        'hidden_layer_sizes': (2048, 1024, 512),
         'max_iter': 1000,
         'activation': 'relu',
         'solver': 'adam',
@@ -105,8 +105,9 @@ config = {
         'learning_rate_init': 0.001,
         'batch_size': 'auto',
         'early_stopping': True,
-        'validation_fraction': 0.1,
-        'n_iter_no_change': 10,
+        'validation_fraction': 0.2,
+        'n_iter_no_change': 20,
+        'tol': 1e-4,
     }
 }
 

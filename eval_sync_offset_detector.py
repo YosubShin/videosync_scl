@@ -6,6 +6,8 @@ from sklearn.svm import SVR
 from sklearn.metrics import mean_absolute_error, median_absolute_error
 import torch.nn.functional as F
 import pickle
+import argparse
+from sklearn.preprocessing import LabelEncoder
 
 # Function to calculate the baseline sync offset using the median approach
 
@@ -44,14 +46,23 @@ def pad_matrices(matrices, target_size):
 
 
 if __name__ == "__main__":
-    # Load prepared data
-    # X = np.load(
-    #     '/home/yosubs/koa_scratch/tmp/scl_transformer_ntu_logs/val_softmaxed_sim_12.npy', allow_pickle=True)
-    # y = np.load('/home/yosubs/koa_scratch/tmp/scl_transformer_ntu_logs/val_softmaxed_sim_12_labels.npy', allow_pickle=True)
-    X = np.load(
-        '/home/yosubs/videosync_scl/human_pose_ntu_softmaxed_sim_12.npy', allow_pickle=True)
+    # Add argument parsing
+    parser = argparse.ArgumentParser(
+        description='Evaluate sync offset detector')
+    parser.add_argument('--model_prefix', type=str, required=True,
+                        help='Prefix for loading the trained model (e.g., "ntu")')
+    parser.add_argument('--data_prefix', type=str, required=True,
+                        help='Prefix for loading validation data (e.g., "h36m")')
+    parser.add_argument('--models', type=str, nargs='+', choices=['log_reg', 'mlp'],
+                        default=['log_reg', 'mlp'],
+                        help='Models to evaluate (choices: log_reg, mlp)')
+    args = parser.parse_args()
+
+    # Load prepared data using data_prefix
+    X = np.load(f'{args.data_prefix}_val_softmaxed_sim_12.npy',
+                allow_pickle=True)
     y = np.load(
-        '/home/yosubs/videosync_scl/human_pose_ntu_softmaxed_sim_12_labels.npy', allow_pickle=True)
+        f'{args.data_prefix}_val_softmaxed_sim_12_labels.npy', allow_pickle=True)
 
     print(f'Shape of X: {X.shape}, Shape of y: {y.shape}')
 
@@ -62,19 +73,39 @@ if __name__ == "__main__":
     X_val = X_padded
     y_val = y
 
-    print(f'Shape of X_val: {X_val.shape}')
-    print(f'Shape of y_val: {y_val.shape}')
+    # Load only the specified models
+    models = {}
+    if 'log_reg' in args.models:
+        with open(f'{args.model_prefix}_log_reg_model.pkl', 'rb') as file:
+            models['log_reg'] = pickle.load(file)
 
-    with open('logistic_regression_model.pkl', 'rb') as file:
-        log_reg = pickle.load(file)
+    if 'mlp' in args.models:
+        with open(f'{args.model_prefix}_mlp_model.pkl', 'rb') as file:
+            models['mlp'] = pickle.load(file)
 
-    # Evaluate models
-    y_pred_log_reg = log_reg.predict(X_val)
+    # Define label encoder with same parameters as training
+    min_offset = -30
+    max_offset = 30
+    all_possible_classes = np.arange(min_offset, max_offset + 1)
+    label_encoder = LabelEncoder()
+    label_encoder.fit(all_possible_classes + 30)
 
-    mae_log_reg = mean_absolute_error(y_val, y_pred_log_reg)
-    medae_log_reg = median_absolute_error(y_val, y_pred_log_reg)
+    # Evaluate only the specified models
+    if 'log_reg' in models:
+        y_pred_log_reg = models['log_reg'].predict(X_val)
+        mae_log_reg = mean_absolute_error(y_val, y_pred_log_reg)
+        medae_log_reg = median_absolute_error(y_val, y_pred_log_reg)
+        print(
+            f'Logistic Regression - MAE: {mae_log_reg}, MedAE: {medae_log_reg}')
 
-    print(f'Logistic Regression - MAE: {mae_log_reg}, MedAE: {medae_log_reg}')
+    if 'mlp' in models:
+        y_val_shifted = y_val + 30
+        y_val_encoded = label_encoder.transform(y_val_shifted)
+        y_pred_mlp = models['mlp'].predict(X_val)
+        y_pred_mlp = y_pred_mlp - 30  # Convert back to original scale
+        mae_mlp = mean_absolute_error(y_val, y_pred_mlp)
+        medae_mlp = median_absolute_error(y_val, y_pred_mlp)
+        print(f'MLP - MAE: {mae_mlp}, MedAE: {medae_mlp}')
 
     # Calculate baseline using median approach
     baseline_offsets = []
