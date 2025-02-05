@@ -7,6 +7,10 @@ import pickle
 from sklearn.neural_network import MLPClassifier
 from sklearn.preprocessing import LabelEncoder
 import argparse
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import Dataset, DataLoader
 
 # Function to calculate the baseline sync offset using the median approach
 
@@ -43,6 +47,155 @@ def pad_matrices(matrices, target_size):
 
     return np.vstack(padded_matrices)
 
+
+# ----------------------------
+# 1) Dataset Class
+# ----------------------------
+class SimilarityMatrixDataset(Dataset):
+    """
+    A PyTorch Dataset for similarity matrices of shape (256, 256).
+    Expects data of shape:
+        X: (num_samples, 1, 256, 256)  -- single-channel "image"
+        y: (num_samples,)              -- integer labels in [0..(num_classes-1)]
+    """
+    def __init__(self, X, y):
+        """
+        X: 4D NumPy array, shape [num_samples, 1, 256, 256]
+        y: 1D NumPy array, integer class labels
+        """
+        self.X = X
+        self.y = y
+
+    def __len__(self):
+        return len(self.X)
+
+    def __getitem__(self, idx):
+        x_tensor = torch.tensor(self.X[idx], dtype=torch.float32)  # shape: (1, 256, 256)
+        y_tensor = torch.tensor(self.y[idx], dtype=torch.long)
+        return x_tensor, y_tensor
+
+
+# ----------------------------
+# 2) Model Definition
+# ----------------------------
+class SimilarityMatrixClassifier(nn.Module):
+    """
+    A CNN classifier for similarity matrices, outputting logits
+    for 'num_classes' distinct categories.
+    """
+    def __init__(self, num_classes=61):
+        """
+        Example: if labels are -30..30 => 61 classes
+        """
+        super(SimilarityMatrixClassifier, self).__init__()
+        
+        # Feature extractor
+        self.features = nn.Sequential(
+            nn.Conv2d(1, 32, kernel_size=3, padding=1),
+            nn.BatchNorm2d(32),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2),  # output: (32, 128, 128)
+            
+            nn.Conv2d(32, 64, kernel_size=3, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2),  # output: (64, 64, 64)
+            
+            nn.Conv2d(64, 128, kernel_size=3, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2),  # output: (128, 32, 32)
+            
+            nn.Conv2d(128, 256, kernel_size=3, padding=1),
+            nn.BatchNorm2d(256),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2)   # output: (256, 16, 16)
+        )
+        
+        # Classifier head
+        self.classifier = nn.Sequential(
+            nn.Linear(256 * 16 * 16, 512),
+            nn.ReLU(inplace=True),
+            nn.Dropout(p=0.3),
+            nn.Linear(512, num_classes)
+        )
+
+    def forward(self, x):
+        x = self.features(x)                   # (batch_size, 256, 16, 16)
+        x = x.view(x.size(0), -1)              # flatten => (batch_size, 256*16*16)
+        x = self.classifier(x)                 # => (batch_size, num_classes) logits
+        return x
+
+
+# ----------------------------
+# 3) Training Function
+# ----------------------------
+def train_model(model, train_loader, val_loader, num_epochs, lr, device):
+    """
+    Standard PyTorch training loop for multi-class classification.
+    
+    model:        PyTorch model (SimilarityMatrixClassifier)
+    train_loader: DataLoader for training set
+    val_loader:   DataLoader for validation set
+    num_epochs:   how many epochs
+    lr:           initial learning rate
+    device:       'cuda' or 'cpu'
+    """
+    model.to(device)
+    optimizer = optim.Adam(model.parameters(), lr=lr)
+    criterion = nn.CrossEntropyLoss()
+
+    for epoch in range(num_epochs):
+        # --- TRAIN ---
+        model.train()
+        running_loss = 0.0
+        correct_train = 0
+        total_train = 0
+
+        for batch_idx, (data, targets) in enumerate(train_loader):
+            data, targets = data.to(device), targets.to(device)
+
+            # Forward
+            outputs = model(data)
+            loss = criterion(outputs, targets)
+
+            # Backward
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            # Accumulate metrics
+            running_loss += loss.item() * data.size(0)
+            _, predicted = torch.max(outputs, 1)
+            correct_train += (predicted == targets).sum().item()
+            total_train += data.size(0)
+
+        train_loss = running_loss / total_train
+        train_acc = correct_train / total_train
+
+        # --- VALIDATE ---
+        model.eval()
+        val_loss = 0.0
+        correct_val = 0
+        total_val = 0
+        
+        with torch.no_grad():
+            for val_data, val_targets in val_loader:
+                val_data, val_targets = val_data.to(device), val_targets.to(device)
+                val_outputs = model(val_data)
+                loss = criterion(val_outputs, val_targets)
+                
+                val_loss += loss.item() * val_data.size(0)
+                _, val_predicted = torch.max(val_outputs, 1)
+                correct_val += (val_predicted == val_targets).sum().item()
+                total_val += val_data.size(0)
+
+        val_loss = val_loss / total_val
+        val_acc = correct_val / total_val
+
+        print(f"Epoch [{epoch+1}/{num_epochs}] "
+              f"Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f} "
+              f"| Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}")
 
 # Set up command line argument parsing
 parser = argparse.ArgumentParser(description='Train sync offset detector')
@@ -91,11 +244,10 @@ y_val_shifted = y_val + 30
 y_train_encoded = label_encoder.transform(y_train_shifted)
 y_val_encoded = label_encoder.transform(y_val_shifted)
 
-# Configuration dictionary
 config = {
     'train_log_reg': False,
     'train_svm': False,
-    'train_mlp': True,
+    'train_mlp': False,
     'mlp_config': {
         'hidden_layer_sizes': (2048, 1024, 512),
         'max_iter': 1000,
@@ -108,6 +260,13 @@ config = {
         'validation_fraction': 0.2,
         'n_iter_no_change': 20,
         'tol': 1e-4,
+    },
+    'train_cnn': True,
+    'cnn_config': {
+        'num_epochs': 50,
+        'batch_size': 32,
+        'learning_rate': 1e-3,
+        'num_classes': 61,  # For range -30 to 30
     }
 }
 
@@ -117,32 +276,79 @@ print(f"Prefix: {prefix}")
 print(json.dumps(config, indent=4))
 print("\n")
 
+# Prepare data for CNN if needed
+if config['train_cnn']:
+    # Reshape data for CNN (add channel dimension)
+    X_train_cnn = X_train_padded.reshape(-1, 1, 256, 256)  # Assuming 256x256 from your padding
+    X_val_cnn = X_val_padded.reshape(-1, 1, 256, 256)
+    
+    # Create datasets and dataloaders
+    train_dataset = SimilarityMatrixDataset(X_train_cnn, y_train_encoded)
+    val_dataset = SimilarityMatrixDataset(X_val_cnn, y_val_encoded)
+    
+    train_loader = DataLoader(
+        train_dataset, 
+        batch_size=config['cnn_config']['batch_size'], 
+        shuffle=True
+    )
+    val_loader = DataLoader(
+        val_dataset, 
+        batch_size=config['cnn_config']['batch_size'], 
+        shuffle=False
+    )
+
 # Initialize models based on config
 models = {}
 if config['train_log_reg']:
-    models['log_reg'] = LogisticRegression(
-        n_jobs=-1, verbose=True, max_iter=1000)
+    models['log_reg'] = LogisticRegression(n_jobs=-1, verbose=True, max_iter=1000)
 
 if config['train_svm']:
     models['svm'] = SVR()
 
 if config['train_mlp']:
-    models['mlp'] = MLPClassifier(
-        verbose=True,
-        **config['mlp_config']
+    models['mlp'] = MLPClassifier(verbose=True, **config['mlp_config'])
+
+if config['train_cnn']:
+    models['cnn'] = SimilarityMatrixClassifier(
+        num_classes=config['cnn_config']['num_classes']
     )
 
 # Train and evaluate models
 results = {}
 for name, model in models.items():
     print(f"\nTraining {name}...")
-
-    # Handle MLP differently due to label encoding
-    if name == 'mlp':
+    
+    if name == 'cnn':
+        # Use PyTorch training loop
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        train_model(
+            model=model,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            num_epochs=config['cnn_config']['num_epochs'],
+            lr=config['cnn_config']['learning_rate'],
+            device=device
+        )
+        
+        # Evaluate CNN model
+        model.eval()
+        y_pred = []
+        with torch.no_grad():
+            for batch_x, _ in val_loader:
+                batch_x = batch_x.to(device)
+                outputs = model(batch_x)
+                _, predicted = torch.max(outputs, 1)
+                y_pred.extend(predicted.cpu().numpy())
+        
+        y_pred = np.array(y_pred) - 30  # Convert back to original scale
+        
+    elif name == 'mlp':
+        # Existing MLP training code
         model.fit(X_train_padded, y_train_encoded)
         y_pred = model.predict(X_val_padded)
-        y_pred = y_pred - 30  # Convert back to original scale
+        y_pred = y_pred - 30
     else:
+        # Existing training code for other models
         model.fit(X_train_padded, y_train)
         y_pred = model.predict(X_val_padded)
 
@@ -154,8 +360,11 @@ for name, model in models.items():
     print(f'{name.upper()} - MAE: {mae}, MedAE: {medae}')
 
     # Save model
-    with open(f'{prefix}_{name}_model.pkl', 'wb') as file:
-        pickle.dump(model, file)
+    if name == 'cnn':
+        torch.save(model.state_dict(), f'{prefix}_{name}_model.pt')
+    else:
+        with open(f'{prefix}_{name}_model.pkl', 'wb') as file:
+            pickle.dump(model, file)
 
 # Calculate baseline using median approach
 baseline_offsets = []
