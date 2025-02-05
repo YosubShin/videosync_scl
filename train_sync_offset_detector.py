@@ -58,6 +58,7 @@ class SimilarityMatrixDataset(Dataset):
         X: (num_samples, 1, 256, 256)  -- single-channel "image"
         y: (num_samples,)              -- integer labels in [0..(num_classes-1)]
     """
+
     def __init__(self, X, y):
         """
         X: 4D NumPy array, shape [num_samples, 1, 256, 256]
@@ -70,7 +71,8 @@ class SimilarityMatrixDataset(Dataset):
         return len(self.X)
 
     def __getitem__(self, idx):
-        x_tensor = torch.tensor(self.X[idx], dtype=torch.float32)  # shape: (1, 256, 256)
+        # shape: (1, 256, 256)
+        x_tensor = torch.tensor(self.X[idx], dtype=torch.float32)
         y_tensor = torch.tensor(self.y[idx], dtype=torch.long)
         return x_tensor, y_tensor
 
@@ -83,47 +85,66 @@ class SimilarityMatrixClassifier(nn.Module):
     A CNN classifier for similarity matrices, outputting logits
     for 'num_classes' distinct categories.
     """
+
     def __init__(self, num_classes=61):
         """
         Example: if labels are -30..30 => 61 classes
         """
         super(SimilarityMatrixClassifier, self).__init__()
-        
+
         # Feature extractor
         self.features = nn.Sequential(
             nn.Conv2d(1, 32, kernel_size=3, padding=1),
             nn.BatchNorm2d(32),
             nn.ReLU(inplace=True),
             nn.MaxPool2d(kernel_size=2),  # output: (32, 128, 128)
-            
+
             nn.Conv2d(32, 64, kernel_size=3, padding=1),
             nn.BatchNorm2d(64),
             nn.ReLU(inplace=True),
             nn.MaxPool2d(kernel_size=2),  # output: (64, 64, 64)
-            
+
             nn.Conv2d(64, 128, kernel_size=3, padding=1),
             nn.BatchNorm2d(128),
             nn.ReLU(inplace=True),
             nn.MaxPool2d(kernel_size=2),  # output: (128, 32, 32)
-            
+
             nn.Conv2d(128, 256, kernel_size=3, padding=1),
             nn.BatchNorm2d(256),
             nn.ReLU(inplace=True),
             nn.MaxPool2d(kernel_size=2)   # output: (256, 16, 16)
         )
-        
+
         # Classifier head
         self.classifier = nn.Sequential(
+            nn.Dropout(p=0.7),
             nn.Linear(256 * 16 * 16, 512),
             nn.ReLU(inplace=True),
-            nn.Dropout(p=0.3),
+            nn.Dropout(p=0.7),
             nn.Linear(512, num_classes)
         )
 
+        # Initialize weights properly
+        self._initialize_weights()
+
+    def _initialize_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(
+                    m.weight, mode='fan_out', nonlinearity='relu')
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.Linear):
+                nn.init.normal_(m.weight, 0, 0.01)
+                nn.init.constant_(m.bias, 0)
+
     def forward(self, x):
         x = self.features(x)                   # (batch_size, 256, 16, 16)
-        x = x.view(x.size(0), -1)              # flatten => (batch_size, 256*16*16)
-        x = self.classifier(x)                 # => (batch_size, num_classes) logits
+        # flatten => (batch_size, 256*16*16)
+        x = x.view(x.size(0), -1)
+        # => (batch_size, num_classes) logits
+        x = self.classifier(x)
         return x
 
 
@@ -133,7 +154,7 @@ class SimilarityMatrixClassifier(nn.Module):
 def train_model(model, train_loader, val_loader, num_epochs, lr, device):
     """
     Standard PyTorch training loop for multi-class classification.
-    
+
     model:        PyTorch model (SimilarityMatrixClassifier)
     train_loader: DataLoader for training set
     val_loader:   DataLoader for validation set
@@ -142,8 +163,19 @@ def train_model(model, train_loader, val_loader, num_epochs, lr, device):
     device:       'cuda' or 'cpu'
     """
     model.to(device)
-    optimizer = optim.Adam(model.parameters(), lr=lr)
+    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=0.01)
+
+    # Learning rate scheduler
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode='min', factor=0.5, patience=5, verbose=True
+    )
+
     criterion = nn.CrossEntropyLoss()
+
+    best_val_loss = float('inf')
+    best_model_state = None
+    patience = 10
+    patience_counter = 0
 
     for epoch in range(num_epochs):
         # --- TRAIN ---
@@ -178,13 +210,14 @@ def train_model(model, train_loader, val_loader, num_epochs, lr, device):
         val_loss = 0.0
         correct_val = 0
         total_val = 0
-        
+
         with torch.no_grad():
             for val_data, val_targets in val_loader:
-                val_data, val_targets = val_data.to(device), val_targets.to(device)
+                val_data, val_targets = val_data.to(
+                    device), val_targets.to(device)
                 val_outputs = model(val_data)
                 loss = criterion(val_outputs, val_targets)
-                
+
                 val_loss += loss.item() * val_data.size(0)
                 _, val_predicted = torch.max(val_outputs, 1)
                 correct_val += (val_predicted == val_targets).sum().item()
@@ -193,9 +226,29 @@ def train_model(model, train_loader, val_loader, num_epochs, lr, device):
         val_loss = val_loss / total_val
         val_acc = correct_val / total_val
 
+        # Learning rate scheduling
+        scheduler.step(val_loss)
+
+        # Check for early stopping
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            best_model_state = model.state_dict()
+            patience_counter = 0
+        else:
+            patience_counter += 1
+            if patience_counter >= patience:
+                print("Early stopping triggered.")
+                break
+
         print(f"Epoch [{epoch+1}/{num_epochs}] "
               f"Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f} "
               f"| Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}")
+
+    # Load best model
+    if best_model_state is not None:
+        model.load_state_dict(best_model_state)
+    return model
+
 
 # Set up command line argument parsing
 parser = argparse.ArgumentParser(description='Train sync offset detector')
@@ -263,9 +316,9 @@ config = {
     },
     'train_cnn': True,
     'cnn_config': {
-        'num_epochs': 50,
+        'num_epochs': 150,
         'batch_size': 32,
-        'learning_rate': 1e-3,
+        'learning_rate': 1e-4,
         'num_classes': 61,  # For range -30 to 30
     }
 }
@@ -279,28 +332,30 @@ print("\n")
 # Prepare data for CNN if needed
 if config['train_cnn']:
     # Reshape data for CNN (add channel dimension)
-    X_train_cnn = X_train_padded.reshape(-1, 1, 256, 256)  # Assuming 256x256 from your padding
+    # Assuming 256x256 from your padding
+    X_train_cnn = X_train_padded.reshape(-1, 1, 256, 256)
     X_val_cnn = X_val_padded.reshape(-1, 1, 256, 256)
-    
+
     # Create datasets and dataloaders
     train_dataset = SimilarityMatrixDataset(X_train_cnn, y_train_encoded)
     val_dataset = SimilarityMatrixDataset(X_val_cnn, y_val_encoded)
-    
+
     train_loader = DataLoader(
-        train_dataset, 
-        batch_size=config['cnn_config']['batch_size'], 
+        train_dataset,
+        batch_size=config['cnn_config']['batch_size'],
         shuffle=True
     )
     val_loader = DataLoader(
-        val_dataset, 
-        batch_size=config['cnn_config']['batch_size'], 
+        val_dataset,
+        batch_size=config['cnn_config']['batch_size'],
         shuffle=False
     )
 
 # Initialize models based on config
 models = {}
 if config['train_log_reg']:
-    models['log_reg'] = LogisticRegression(n_jobs=-1, verbose=True, max_iter=1000)
+    models['log_reg'] = LogisticRegression(
+        n_jobs=-1, verbose=True, max_iter=1000)
 
 if config['train_svm']:
     models['svm'] = SVR()
@@ -317,7 +372,7 @@ if config['train_cnn']:
 results = {}
 for name, model in models.items():
     print(f"\nTraining {name}...")
-    
+
     if name == 'cnn':
         # Use PyTorch training loop
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -329,7 +384,7 @@ for name, model in models.items():
             lr=config['cnn_config']['learning_rate'],
             device=device
         )
-        
+
         # Evaluate CNN model
         model.eval()
         y_pred = []
@@ -339,9 +394,9 @@ for name, model in models.items():
                 outputs = model(batch_x)
                 _, predicted = torch.max(outputs, 1)
                 y_pred.extend(predicted.cpu().numpy())
-        
+
         y_pred = np.array(y_pred) - 30  # Convert back to original scale
-        
+
     elif name == 'mlp':
         # Existing MLP training code
         model.fit(X_train_padded, y_train_encoded)
