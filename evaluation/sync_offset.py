@@ -142,6 +142,7 @@ class SyncOffset(object):
         self.cur_epoch = None
         self.cur_iter = None
         self.sample = None
+        self.log_reg = None
 
         try:
             with open("logistic_regression_model.pkl", "rb") as file:
@@ -169,7 +170,9 @@ class SyncOffset(object):
         self.sample = sample
 
         # Initialize lists for storing local GPU metrics for each method
-        error_methods = ["median", "mean", "log_reg", "dtw"]
+        error_methods = ["median", "dtw"]
+        if self.log_reg is not None:
+            error_methods.append("log_reg")
         local_error_metrics = {method: [] for method in error_methods}
 
         # Padding value for int32 (max integer value)
@@ -251,17 +254,18 @@ class SyncOffset(object):
                             ]
                         )
 
-                    csv_writer.writerow(
-                        [
-                            names[0][0],
-                            names[1][0],
-                            labels[0].item() - labels[1].item(),
-                            int(abs_frame_error_dict["err_median"].item()),
-                            int(abs_frame_error_dict["err_mean"].item()),
-                            int(abs_frame_error_dict["err_log_reg"].item()),
-                            int(abs_frame_error_dict["err_dtw"].item()),
-                        ]
-                    )
+                    # Create row data with conditional log_reg error
+                    row_data = [
+                        names[0][0],
+                        names[1][0],
+                        labels[0].item() - labels[1].item(),
+                        int(abs_frame_error_dict["err_median"].item()),
+                        int(abs_frame_error_dict["err_mean"].item()),
+                        int(abs_frame_error_dict["err_log_reg"].item(
+                        )) if "err_log_reg" in abs_frame_error_dict else None,
+                        int(abs_frame_error_dict["err_dtw"].item()),
+                    ]
+                    csv_writer.writerow(row_data)
 
                 count += 1
 
@@ -639,8 +643,11 @@ def decision_offset(
     nns = path[1][uix]
     predict_dtw = torch.tensor(nns)
 
-    X_padded = pad_matrices([softmaxed_sim_12.cpu()], target_size=256)
-    log_reg_sync_offset = log_reg.predict(X_padded)[0]
+    # Only calculate log_reg predictions if model exists
+    log_reg_sync_offset = None
+    if log_reg is not None:
+        X_padded = pad_matrices([softmaxed_sim_12.cpu()], target_size=256)
+        log_reg_sync_offset = log_reg.predict(X_padded)[0]
 
     length1 = ground.size(0)
 
@@ -689,16 +696,20 @@ def decision_offset(
 
         plot_tsne(view1, view2, name0, name1, cur_epoch, cur_iter, cfg)
 
-    return {
+    result = {
         "abs_median": abs_median,
         "err_median": num_frames_median - label,
         "abs_mean": abs_mean,
         "err_mean": num_frames_mean - label,
-        "abs_log_reg": abs(log_reg_sync_offset - label),
-        "err_log_reg": log_reg_sync_offset - label,
         "abs_dtw": abs(num_frames_dtw - label),
         "err_dtw": num_frames_dtw - label,
     }
 
+    # Only add log_reg metrics if model exists
+    if log_reg is not None:
+        result.update({
+            "abs_log_reg": abs(log_reg_sync_offset - label),
+            "err_log_reg": log_reg_sync_offset - label,
+        })
 
     return result
