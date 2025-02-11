@@ -19,10 +19,18 @@ base_dir="/data/cmu/pose_dataset"
 
 # Video files to download for each dataset
 video_files=(
+    "hd_00_00.mp4"
+    "hd_00_03.mp4"
+    "hd_00_06.mp4"
+    "hd_00_09.mp4"
     "hd_00_10.mp4"
     "hd_00_11.mp4"
+    "hd_00_15.mp4"
     "hd_00_20.mp4"
     "hd_00_21.mp4"
+    "hd_00_24.mp4"
+    "hd_00_27.mp4"
+    "hd_00_30.mp4"
 )
 
 # Download each dataset

@@ -22,3 +22,7 @@ wandb/
 # temporary files
 *.log
 pouring_tfrecords
+
+*.pkl
+*.pt
+*cache
