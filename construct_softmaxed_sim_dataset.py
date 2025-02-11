@@ -22,6 +22,8 @@ logger = logging.get_logger(__name__)
 
 
 def save_similarity_and_labels(cfg, model, loader, dataset_type):
+    model.eval()  # Set model to evaluation mode
+
     all_similarity_matrices = []
     all_labels = []
 

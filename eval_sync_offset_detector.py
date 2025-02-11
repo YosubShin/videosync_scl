@@ -8,6 +8,10 @@ import torch.nn.functional as F
 import pickle
 import argparse
 from sklearn.preprocessing import LabelEncoder
+from train_sync_offset_detector import SimilarityMatrixClassifier as _SimilarityMatrixClassifier
+
+# This avoids running the argument parser
+SimilarityMatrixClassifier = _SimilarityMatrixClassifier
 
 # Function to calculate the baseline sync offset using the median approach
 
@@ -53,9 +57,9 @@ if __name__ == "__main__":
                         help='Prefix for loading the trained model (e.g., "ntu")')
     parser.add_argument('--data_prefix', type=str, required=True,
                         help='Prefix for loading validation data (e.g., "h36m")')
-    parser.add_argument('--models', type=str, nargs='+', choices=['log_reg', 'mlp'],
-                        default=['log_reg', 'mlp'],
-                        help='Models to evaluate (choices: log_reg, mlp)')
+    parser.add_argument('--models', type=str, nargs='+', choices=['log_reg', 'mlp', 'cnn'],
+                        default=['log_reg', 'mlp', 'cnn'],
+                        help='Models to evaluate (choices: log_reg, mlp, cnn)')
     args = parser.parse_args()
 
     # Load prepared data using data_prefix
@@ -83,6 +87,14 @@ if __name__ == "__main__":
         with open(f'{args.model_prefix}_mlp_model.pkl', 'rb') as file:
             models['mlp'] = pickle.load(file)
 
+    if 'cnn' in args.models:
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        models['cnn'] = SimilarityMatrixClassifier()
+        models['cnn'].load_state_dict(torch.load(
+            f'{args.model_prefix}_cnn_model.pt'))
+        models['cnn'].to(device)
+        models['cnn'].eval()
+
     # Define label encoder with same parameters as training
     min_offset = -30
     max_offset = 30
@@ -106,6 +118,28 @@ if __name__ == "__main__":
         mae_mlp = mean_absolute_error(y_val, y_pred_mlp)
         medae_mlp = median_absolute_error(y_val, y_pred_mlp)
         print(f'MLP - MAE: {mae_mlp}, MedAE: {medae_mlp}')
+
+    if 'cnn' in models:
+        # Reshape data for CNN (add channel dimension)
+        X_val_cnn = X_padded.reshape(-1, 1, 256, 256)
+        X_val_tensor = torch.tensor(X_val_cnn, dtype=torch.float32).to(device)
+
+        # Evaluate in batches to prevent memory issues
+        batch_size = 32
+        y_pred_cnn = []
+
+        with torch.no_grad():
+            for i in range(0, len(X_val_tensor), batch_size):
+                batch = X_val_tensor[i:i+batch_size]
+                outputs = models['cnn'](batch)
+                _, predicted = torch.max(outputs, 1)
+                y_pred_cnn.extend(predicted.cpu().numpy())
+
+        # Convert back to original scale
+        y_pred_cnn = np.array(y_pred_cnn) - 30
+        mae_cnn = mean_absolute_error(y_val, y_pred_cnn)
+        medae_cnn = median_absolute_error(y_val, y_pred_cnn)
+        print(f'CNN - MAE: {mae_cnn}, MedAE: {medae_cnn}')
 
     # Calculate baseline using median approach
     baseline_offsets = []

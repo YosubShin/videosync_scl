@@ -11,6 +11,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
+from evaluation.utils import calculate_margin_of_error
 
 # Function to calculate the baseline sync offset using the median approach
 
@@ -20,7 +21,7 @@ def calculate_median_offset(softmaxed_sim_12):
     ground = np.arange(softmaxed_sim_12.shape[0])
 
     frames = predict - ground
-    median_frames = np.median(frames)
+    median_frames = np.floor(np.median(frames))
     return median_frames
 
 
@@ -250,185 +251,199 @@ def train_model(model, train_loader, val_loader, num_epochs, lr, device):
     return model
 
 
-# Set up command line argument parsing
-parser = argparse.ArgumentParser(description='Train sync offset detector')
-parser.add_argument('--prefix', type=str, required=True,
-                    help='Prefix for input/output files (e.g., "ntu")')
-args = parser.parse_args()
+if __name__ == "__main__":
+    # Set up command line argument parsing
+    parser = argparse.ArgumentParser(description='Train sync offset detector')
+    parser.add_argument('--prefix', type=str, required=True,
+                        help='Prefix for input/output files (e.g., "ntu")')
+    parser.add_argument('--sync_methods', nargs='+', choices=['log_reg', 'svm', 'mlp', 'cnn'],
+                        required=True, help='Sync methods to train (log_reg, svm, mlp, cnn)')
+    args = parser.parse_args()
 
-prefix = args.prefix
+    prefix = args.prefix
 
-# Load prepared data
-X_train = np.load(
-    f'{prefix}_train_softmaxed_sim_12.npy', allow_pickle=True)
-y_train = np.load(
-    f'{prefix}_train_softmaxed_sim_12_labels.npy', allow_pickle=True)
-X_val = np.load(
-    f'{prefix}_val_softmaxed_sim_12.npy', allow_pickle=True)
-y_val = np.load(
-    f'{prefix}_val_softmaxed_sim_12_labels.npy', allow_pickle=True)
+    # Load prepared data
+    X_train = np.load(
+        f'{prefix}_train_softmaxed_sim_12.npy', allow_pickle=True)
+    y_train = np.load(
+        f'{prefix}_train_softmaxed_sim_12_labels.npy', allow_pickle=True)
+    X_val = np.load(f'{prefix}_val_softmaxed_sim_12.npy', allow_pickle=True)
+    y_val = np.load(
+        f'{prefix}_val_softmaxed_sim_12_labels.npy', allow_pickle=True)
 
-print(f'Shape of X_train: {X_train.shape}, Shape of y_train: {y_train.shape}')
-print(f'Shape of X_val: {X_val.shape}, Shape of y_val: {y_val.shape}')
+    print(
+        f'Shape of X_train: {X_train.shape}, Shape of y_train: {y_train.shape}')
+    print(f'Shape of X_val: {X_val.shape}, Shape of y_val: {y_val.shape}')
 
-# Pad matrices to target_size*target_size
-X_train_padded = pad_matrices(X_train, target_size=256)
-X_val_padded = pad_matrices(X_val, target_size=256)
+    # Pad matrices to target_size*target_size
+    X_train_padded = pad_matrices(X_train, target_size=256)
+    X_val_padded = pad_matrices(X_val, target_size=256)
 
-print('after padding X matrices')
-print(
-    f'Shape of X_train_padded: {X_train_padded.shape}, Shape of X_val_padded: {X_val_padded.shape}')
-print(f'Shape of y_train: {y_train.shape}, Shape of y_val: {y_val.shape}')
+    print('after padding X matrices')
+    print(
+        f'Shape of X_train_padded: {X_train_padded.shape}, Shape of X_val_padded: {X_val_padded.shape}')
+    print(f'Shape of y_train: {y_train.shape}, Shape of y_val: {y_val.shape}')
 
-# Define the range of classes explicitly
-min_offset = -30
-max_offset = 30
-n_classes = max_offset - min_offset + 1  # 61 classes
-all_possible_classes = np.arange(min_offset, max_offset + 1)
+    # Define the range of classes explicitly
+    min_offset = -30
+    max_offset = 30
+    n_classes = max_offset - min_offset + 1  # 61 classes
+    all_possible_classes = np.arange(min_offset, max_offset + 1)
 
-# Initialize label encoder with all possible classes
-label_encoder = LabelEncoder()
-# Fit with shifted values (0 to 60)
-label_encoder.fit(all_possible_classes + 30)
+    # Initialize label encoder with all possible classes
+    label_encoder = LabelEncoder()
+    # Fit with shifted values (0 to 60)
+    label_encoder.fit(all_possible_classes + 30)
 
-# Convert y values to class labels (0 to 60)
-y_train_shifted = y_train + 30
-y_val_shifted = y_val + 30
-y_train_encoded = label_encoder.transform(y_train_shifted)
-y_val_encoded = label_encoder.transform(y_val_shifted)
+    # Convert y values to class labels (0 to 60)
+    y_train_shifted = y_train + 30
+    y_val_shifted = y_val + 30
+    y_train_encoded = label_encoder.transform(y_train_shifted)
+    y_val_encoded = label_encoder.transform(y_val_shifted)
 
-config = {
-    'train_log_reg': False,
-    'train_svm': False,
-    'train_mlp': False,
-    'mlp_config': {
-        'hidden_layer_sizes': (2048, 1024, 512),
-        'max_iter': 1000,
-        'activation': 'relu',
-        'solver': 'adam',
-        'random_state': 42,
-        'learning_rate_init': 0.001,
-        'batch_size': 'auto',
-        'early_stopping': True,
-        'validation_fraction': 0.2,
-        'n_iter_no_change': 20,
-        'tol': 1e-4,
-    },
-    'train_cnn': True,
-    'cnn_config': {
-        'num_epochs': 150,
-        'batch_size': 32,
-        'learning_rate': 1e-4,
-        'num_classes': 61,  # For range -30 to 30
+    config = {
+        'train_log_reg': 'log_reg' in args.sync_methods,
+        'train_svm': 'svm' in args.sync_methods,
+        'train_mlp': 'mlp' in args.sync_methods,
+        'train_cnn': 'cnn' in args.sync_methods,
+        'mlp_config': {
+            'hidden_layer_sizes': (2048, 1024, 512),
+            'max_iter': 1000,
+            'activation': 'relu',
+            'solver': 'adam',
+            'random_state': 42,
+            'learning_rate_init': 0.001,
+            'batch_size': 'auto',
+            'early_stopping': True,
+            'validation_fraction': 0.2,
+            'n_iter_no_change': 20,
+            'tol': 1e-4,
+        },
+        'cnn_config': {
+            'num_epochs': 150,
+            'batch_size': 32,
+            'learning_rate': 1e-4,
+            'num_classes': 61,  # For range -30 to 30
+        }
     }
-}
 
-# Print configuration and prefix for logging
-print("\nRunning with configuration:")
-print(f"Prefix: {prefix}")
-print(json.dumps(config, indent=4))
-print("\n")
+    # Print configuration and prefix for logging
+    print("\nRunning with configuration:")
+    print(f"Prefix: {prefix}")
+    print(json.dumps(config, indent=4))
+    print("\n")
 
-# Prepare data for CNN if needed
-if config['train_cnn']:
-    # Reshape data for CNN (add channel dimension)
-    # Assuming 256x256 from your padding
-    X_train_cnn = X_train_padded.reshape(-1, 1, 256, 256)
-    X_val_cnn = X_val_padded.reshape(-1, 1, 256, 256)
+    # Prepare data for CNN if needed
+    if config['train_cnn']:
+        # Reshape data for CNN (add channel dimension)
+        # Assuming 256x256 from your padding
+        X_train_cnn = X_train_padded.reshape(-1, 1, 256, 256)
+        X_val_cnn = X_val_padded.reshape(-1, 1, 256, 256)
 
-    # Create datasets and dataloaders
-    train_dataset = SimilarityMatrixDataset(X_train_cnn, y_train_encoded)
-    val_dataset = SimilarityMatrixDataset(X_val_cnn, y_val_encoded)
+        # Create datasets and dataloaders
+        train_dataset = SimilarityMatrixDataset(X_train_cnn, y_train_encoded)
+        val_dataset = SimilarityMatrixDataset(X_val_cnn, y_val_encoded)
 
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=config['cnn_config']['batch_size'],
-        shuffle=True
-    )
-    val_loader = DataLoader(
-        val_dataset,
-        batch_size=config['cnn_config']['batch_size'],
-        shuffle=False
-    )
-
-# Initialize models based on config
-models = {}
-if config['train_log_reg']:
-    models['log_reg'] = LogisticRegression(
-        n_jobs=-1, verbose=True, max_iter=1000)
-
-if config['train_svm']:
-    models['svm'] = SVR()
-
-if config['train_mlp']:
-    models['mlp'] = MLPClassifier(verbose=True, **config['mlp_config'])
-
-if config['train_cnn']:
-    models['cnn'] = SimilarityMatrixClassifier(
-        num_classes=config['cnn_config']['num_classes']
-    )
-
-# Train and evaluate models
-results = {}
-for name, model in models.items():
-    print(f"\nTraining {name}...")
-
-    if name == 'cnn':
-        # Use PyTorch training loop
-        device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        train_model(
-            model=model,
-            train_loader=train_loader,
-            val_loader=val_loader,
-            num_epochs=config['cnn_config']['num_epochs'],
-            lr=config['cnn_config']['learning_rate'],
-            device=device
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=config['cnn_config']['batch_size'],
+            shuffle=True
+        )
+        val_loader = DataLoader(
+            val_dataset,
+            batch_size=config['cnn_config']['batch_size'],
+            shuffle=False
         )
 
-        # Evaluate CNN model
-        model.eval()
-        y_pred = []
-        with torch.no_grad():
-            for batch_x, _ in val_loader:
-                batch_x = batch_x.to(device)
-                outputs = model(batch_x)
-                _, predicted = torch.max(outputs, 1)
-                y_pred.extend(predicted.cpu().numpy())
+    # Initialize models based on config
+    models = {}
+    if config['train_log_reg']:
+        models['log_reg'] = LogisticRegression(
+            n_jobs=-1, verbose=True, max_iter=1000)
 
-        y_pred = np.array(y_pred) - 30  # Convert back to original scale
+    if config['train_svm']:
+        models['svm'] = SVR()
 
-    elif name == 'mlp':
-        # Existing MLP training code
-        model.fit(X_train_padded, y_train_encoded)
-        y_pred = model.predict(X_val_padded)
-        y_pred = y_pred - 30
-    else:
-        # Existing training code for other models
-        model.fit(X_train_padded, y_train)
-        y_pred = model.predict(X_val_padded)
+    if config['train_mlp']:
+        models['mlp'] = MLPClassifier(verbose=True, **config['mlp_config'])
 
-    # Calculate metrics
-    mae = mean_absolute_error(y_val, y_pred)
-    medae = median_absolute_error(y_val, y_pred)
-    results[name] = {'mae': mae, 'medae': medae}
+    if config['train_cnn']:
+        models['cnn'] = SimilarityMatrixClassifier(
+            num_classes=config['cnn_config']['num_classes']
+        )
 
-    print(f'{name.upper()} - MAE: {mae}, MedAE: {medae}')
+    # Train and evaluate models
+    results = {}
+    for name, model in models.items():
+        print(f"\nTraining {name}...")
 
-    # Save model
-    if name == 'cnn':
-        torch.save(model.state_dict(), f'{prefix}_{name}_model.pt')
-    else:
-        with open(f'{prefix}_{name}_model.pkl', 'wb') as file:
-            pickle.dump(model, file)
+        if name == 'cnn':
+            # Use PyTorch training loop
+            device = 'cuda' if torch.cuda.is_available() else 'cpu'
+            train_model(
+                model=model,
+                train_loader=train_loader,
+                val_loader=val_loader,
+                num_epochs=config['cnn_config']['num_epochs'],
+                lr=config['cnn_config']['learning_rate'],
+                device=device
+            )
 
-# Calculate baseline using median approach
-baseline_offsets = []
-for i, softmaxed_sim_12 in enumerate(X_val):
-    # print(f'Shape of softmaxed_sim_12: {softmaxed_sim_12.shape}')
-    median_offset = calculate_median_offset(softmaxed_sim_12)
-    baseline_offsets.append(median_offset)
+            # Evaluate CNN model
+            model.eval()
+            y_pred = []
+            with torch.no_grad():
+                for batch_x, _ in val_loader:
+                    batch_x = batch_x.to(device)
+                    outputs = model(batch_x)
+                    _, predicted = torch.max(outputs, 1)
+                    y_pred.extend(predicted.cpu().numpy())
 
-baseline_mae = mean_absolute_error(y_val, baseline_offsets)
-baseline_medae = median_absolute_error(y_val, baseline_offsets)
+            y_pred = np.array(y_pred) - 30  # Convert back to original scale
 
-print(f'Baseline (Median) - MAE: {baseline_mae}, MedAE: {baseline_medae}')
+        elif name == 'mlp':
+            # Existing MLP training code
+            model.fit(X_train_padded, y_train_encoded)
+            y_pred = model.predict(X_val_padded)
+            y_pred = y_pred - 30
+        else:
+            # Existing training code for other models
+            model.fit(X_train_padded, y_train)
+            y_pred = model.predict(X_val_padded)
+
+        # Calculate metrics
+        mae = mean_absolute_error(y_val, y_pred)
+        medae = median_absolute_error(y_val, y_pred)
+
+        # Calculate absolute errors for margin calculation
+        absolute_errors = np.abs(y_val - y_pred)
+        margin = calculate_margin_of_error(absolute_errors)
+
+        results[name] = {
+            'mae': mae,
+            'medae': medae,
+            'mae_margin': margin
+        }
+
+        print(f'{name.upper()} - MAE: {mae:.4f} ± {margin:.4f}, MedAE: {medae:.4f}')
+
+        # Save model
+        if name == 'cnn':
+            torch.save(model.state_dict(), f'{prefix}_{name}_model.pt')
+        else:
+            with open(f'{prefix}_{name}_model.pkl', 'wb') as file:
+                pickle.dump(model, file)
+
+    # For baseline results
+    baseline_offsets = []
+    for i, softmaxed_sim_12 in enumerate(X_val):
+        median_offset = calculate_median_offset(softmaxed_sim_12)
+        baseline_offsets.append(median_offset)
+
+    baseline_mae = mean_absolute_error(y_val, baseline_offsets)
+    baseline_medae = median_absolute_error(y_val, baseline_offsets)
+    baseline_absolute_errors = np.abs(y_val - baseline_offsets)
+    baseline_margin = calculate_margin_of_error(baseline_absolute_errors)
+
+    print(
+        f'Baseline (Median) - MAE: {baseline_mae:.4f} ± {baseline_margin:.4f}, MedAE: {baseline_medae:.4f}')
